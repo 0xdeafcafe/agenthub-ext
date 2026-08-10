@@ -57,6 +57,7 @@ Both work, via per-view DOM adapters (`lib/views.ts`), including `/changes/<sha>
 Drop `.github/pr-impact.yml` in a repo to customise the categories. It's fetched same-origin with your session cookies, so private repos work. Any fetch or parse error falls back to the built-in defaults - a bad config file will never break the page.
 
 ```yaml
+defaultView: [code]         # categories that start expanded; everything else starts hidden
 categories:
   tests:
     globs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test/**", "**/tests/**"]
@@ -72,9 +73,9 @@ categories:
     action: visible
 ```
 
+- `defaultView` is optional. When set, listed categories start expanded and every other category starts hidden (as in, gone, zero scroll space). When it's absent, each category's `action` sets its starting state - and the built-in defaults already amount to code-only reading: `tests` → collapse, `docs` → hide, `generated` → hide (that last one includes `**/package-lock.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/go.sum` and `**/Cargo.lock`).
 - First matching rule wins. Unmatched files land in the implicit `code` category, always listed last in the bar.
-- `action` sets the default display state. Unknown actions and keys are ignored.
-- Built-in defaults when there's no config file: `tests` → collapse, `docs` → hide, `generated` → hide (that last one includes `**/package-lock.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/go.sum` and `**/Cargo.lock`).
+- Unknown actions and keys are ignored.
 
 ## Development
 

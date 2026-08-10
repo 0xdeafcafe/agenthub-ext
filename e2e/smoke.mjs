@@ -309,6 +309,7 @@ try {
             collapsed: containers.every(el => el?.classList.contains('prix-collapsed')),
             hidden: containers.every(el => el?.classList.contains('prix-hidden')),
             containerCount: containers.length,
+            zeroHeight: containers.every(el => (el?.getBoundingClientRect().height ?? 1) === 0),
           };
         }, target),
       );
@@ -329,6 +330,10 @@ try {
         states.every((state, i) => matchesState(state, expected[i])),
         JSON.stringify(states.map(s => ({s: s.chipState, c: s.collapsed, h: s.hidden}))),
       );
+      const hiddenStep = states.find((state, i) => expected[i] === 'hidden');
+      const visibleStep = states.find((state, i) => expected[i] === 'visible');
+      check('hidden files occupy zero scroll space', hiddenStep?.zeroHeight === true);
+      check('visible files have height again', visibleStep?.zeroHeight === false);
     }
 
     // Tree rows follow too (tests passed through hidden in the cycle)

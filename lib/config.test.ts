@@ -19,31 +19,42 @@ categories:
 
 describe('parseConfig', () => {
   it('parses a valid config preserving order and actions', () => {
-    const rules = parseConfig(EXAMPLE);
+    const {rules} = parseConfig(EXAMPLE);
     expect(rules.map(rule => rule.name)).toEqual(['tests', 'docs', 'generated', 'server']);
     expect(rules.map(rule => rule.action)).toEqual(['collapse', 'hide', 'hide', 'visible']);
     expect(rules[3].globs).toEqual(['server/**']);
   });
 
+  it('returns null defaultView when the key is absent or junk', () => {
+    expect(parseConfig(EXAMPLE).defaultView).toBeNull();
+    expect(parseConfig('defaultView: code\ncategories:\n  sdk:\n    globs: ["sdk/**"]\n').defaultView).toBeNull();
+    expect(parseConfig('defaultView: []\ncategories:\n  sdk:\n    globs: ["sdk/**"]\n').defaultView).toBeNull();
+  });
+
+  it('parses defaultView as a list of category names', () => {
+    const config = parseConfig('defaultView: [code, server]\ncategories:\n  sdk:\n    globs: ["sdk/**"]\n');
+    expect(config.defaultView).toEqual(['code', 'server']);
+  });
+
   it('defaults a missing action to visible', () => {
-    const rules = parseConfig('categories:\n  sdk:\n    globs: ["sdk/**"]\n');
+    const {rules} = parseConfig('categories:\n  sdk:\n    globs: ["sdk/**"]\n');
     expect(rules).toEqual([{name: 'sdk', globs: ['sdk/**'], action: 'visible'}]);
   });
 
   it('rejects an invalid action but keeps the category with visible', () => {
-    const rules = parseConfig('categories:\n  sdk:\n    globs: ["sdk/**"]\n    action: nuke\n');
+    const {rules} = parseConfig('categories:\n  sdk:\n    globs: ["sdk/**"]\n    action: nuke\n');
     expect(rules[0].action).toBe('visible');
   });
 
   it('ignores unknown keys', () => {
-    const rules = parseConfig(
+    const {rules} = parseConfig(
       'version: 2\ncategories:\n  sdk:\n    globs: ["sdk/**"]\n    color: red\nextra: true\n',
     );
     expect(rules).toEqual([{name: 'sdk', globs: ['sdk/**'], action: 'visible'}]);
   });
 
   it('skips categories without usable globs', () => {
-    const rules = parseConfig(
+    const {rules} = parseConfig(
       'categories:\n  broken:\n    action: hide\n  empty:\n    globs: []\n  fine:\n    globs: ["a/**"]\n',
     );
     expect(rules.map(rule => rule.name)).toEqual(['fine']);

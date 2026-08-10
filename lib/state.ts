@@ -1,5 +1,5 @@
 import {browser} from 'wxt/browser';
-import type {CategoryAction} from './classifier';
+import {actionFor, type CategoryAction, type CompiledRule} from './classifier';
 
 export type DisplayState = 'visible' | 'collapsed' | 'hidden';
 
@@ -28,6 +28,23 @@ export function actionToState(action: CategoryAction): DisplayState {
 
 export function isDisplayState(value: unknown): value is DisplayState {
   return value === 'visible' || value === 'collapsed' || value === 'hidden';
+}
+
+/**
+ * The state a category starts in before any user choice. With a defaultView
+ * list it's binary: listed categories visible, everything else hidden (zero
+ * scroll space). Without one, the category's configured action rules.
+ */
+export function defaultStateFor(
+  category: string,
+  rules: CompiledRule[],
+  defaultView: string[] | null,
+): DisplayState {
+  if (defaultView) {
+    return defaultView.includes(category) ? 'visible' : 'hidden';
+  }
+
+  return actionToState(actionFor(category, rules));
 }
 
 const STORAGE_KEY = 'prix:categoryStates';

@@ -165,6 +165,16 @@
   display: none !important;
 }
 
+/* The outermost per-file wrapper (React view rows keep their own height) */
+.prix-hidden-outer {
+  display: none !important;
+}
+
+.prix-collapsed-outer {
+  min-height: 0 !important;
+  height: auto !important;
+}
+
 /* My PRs tab counter - accent background so it reads as "yours".
    The placeholder is inserted empty with the tab; min-width reserves its
    geometry so a count arriving later changes text only, never layout. */

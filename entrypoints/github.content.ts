@@ -1,6 +1,6 @@
 import './content.css';
 import {defineContentScript} from 'wxt/utils/define-content-script';
-import {actionFor, classify, compileRules, type CompiledRule} from '../lib/classifier';
+import {classify, compileRules, type CompiledRule} from '../lib/classifier';
 import {fetchConfig} from '../lib/config';
 import {findBarPlacement, ImpactBar, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
@@ -9,8 +9,8 @@ import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/f
 import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
-import {actionToState, CategoryStateStore, type DisplayState} from '../lib/state';
-import {adapterFor, containerSelector, headerSelector, isFileContainer} from '../lib/views';
+import {defaultStateFor, CategoryStateStore, type DisplayState} from '../lib/state';
+import {adapterFor, containerSelector, headerSelector, isFileContainer, outerFileWrapper} from '../lib/views';
 
 // Matches /pull/:n/files and /pull/:n/changes (incl. /changes/<sha>..<sha>).
 // Local regex instead of github-url-detection: the installed version's
@@ -70,8 +70,23 @@ function applyState(container: Element, state: DisplayState): void {
   // Collapsing only works once a header child is tagged - otherwise the CSS
   // would hide every child. Fall back to visible rather than blank the file.
   const canCollapse = container.querySelector(':scope > .prix-header') !== null;
-  container.classList.toggle('prix-collapsed', state === 'collapsed' && canCollapse);
+  const collapsed = state === 'collapsed' && canCollapse;
+  container.classList.toggle('prix-collapsed', collapsed);
   container.classList.toggle('prix-hidden', state === 'hidden');
+
+  // State goes on the outermost per-file wrapper too: in the React view the
+  // container can sit in a row/slot that keeps its own height, so hiding or
+  // collapsing only the container leaves scroll space behind. Strip our
+  // outer classes from any previous wrapper first - sibling mounts can move
+  // the boundary between calls.
+  const previous = container.closest('.prix-hidden-outer, .prix-collapsed-outer');
+  previous?.classList.remove('prix-hidden-outer', 'prix-collapsed-outer');
+
+  const outer = outerFileWrapper(container);
+  if (outer !== container) {
+    outer.classList.toggle('prix-hidden-outer', state === 'hidden');
+    outer.classList.toggle('prix-collapsed-outer', collapsed);
+  }
 }
 
 /**
@@ -140,7 +155,8 @@ async function init(signal: AbortSignal): Promise<void> {
   }
 
   const [, owner, repo, prNumber] = match;
-  const rules: CompiledRule[] = compileRules(await fetchConfig(owner, repo));
+  const config = await fetchConfig(owner, repo);
+  const rules: CompiledRule[] = compileRules(config.rules);
   if (signal.aborted) {
     return;
   }
@@ -154,7 +170,7 @@ async function init(signal: AbortSignal): Promise<void> {
   }
 
   const stateOf = (category: string): DisplayState =>
-    store.get(category, actionToState(actionFor(category, rules)));
+    store.get(category, defaultStateFor(category, rules, config.defaultView));
 
   const counts = new Map<string, CategoryCount>();
   const processed: Array<{container: Element; category: string; viewed: boolean}> = [];

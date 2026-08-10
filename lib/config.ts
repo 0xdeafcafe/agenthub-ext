@@ -29,6 +29,18 @@ export const DEFAULT_CATEGORIES: CategoryRule[] = [
   },
 ];
 
+export interface PrImpactConfig {
+  rules: CategoryRule[];
+  /**
+   * Categories that start expanded; every other category starts hidden.
+   * Null when the config file doesn't set it - the per-category `action`
+   * defaults rule then (built-in defaults already expand only `code`).
+   */
+  defaultView: string[] | null;
+}
+
+export const DEFAULT_CONFIG: PrImpactConfig = {rules: DEFAULT_CATEGORIES, defaultView: null};
+
 const ACTIONS = new Set<CategoryAction>(['visible', 'collapse', 'hide']);
 
 /**
@@ -36,7 +48,7 @@ const ACTIONS = new Set<CategoryAction>(['visible', 'collapse', 'hide']);
  * without a non-empty string `globs` array are skipped. Throws when nothing
  * usable remains so the caller can fall back to the built-in defaults.
  */
-export function parseConfig(text: string): CategoryRule[] {
+export function parseConfig(text: string): PrImpactConfig {
   const data: unknown = parse(text);
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     throw new Error('pr-impact.yml: root must be a mapping');
@@ -69,15 +81,21 @@ export function parseConfig(text: string): CategoryRule[] {
     throw new Error('pr-impact.yml: no valid categories');
   }
 
-  return rules;
+  const defaultViewRaw = (data as Record<string, unknown>).defaultView;
+  const defaultView =
+    Array.isArray(defaultViewRaw) && defaultViewRaw.length > 0 && defaultViewRaw.every(x => typeof x === 'string')
+      ? (defaultViewRaw as string[])
+      : null;
+
+  return {rules, defaultView};
 }
 
 // Session-scoped cache, keyed by `owner/repo`; stores the promise so
 // concurrent inits for the same repo share one fetch.
-const cache = new Map<string, Promise<CategoryRule[]>>();
+const cache = new Map<string, Promise<PrImpactConfig>>();
 
 /** Fetches the repo config same-origin (session cookies → works for private repos). Fails open to defaults. */
-export function fetchConfig(owner: string, repo: string): Promise<CategoryRule[]> {
+export function fetchConfig(owner: string, repo: string): Promise<PrImpactConfig> {
   const key = `${owner}/${repo}`;
   let cached = cache.get(key);
   if (!cached) {
@@ -87,12 +105,12 @@ export function fetchConfig(owner: string, repo: string): Promise<CategoryRule[]
           credentials: 'include',
         });
         if (!response.ok) {
-          return DEFAULT_CATEGORIES;
+          return DEFAULT_CONFIG;
         }
 
         return parseConfig(await response.text());
       } catch {
-        return DEFAULT_CATEGORIES;
+        return DEFAULT_CONFIG;
       }
     })();
     cache.set(key, cached);

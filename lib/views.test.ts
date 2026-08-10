@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {describe, expect, it} from 'vitest';
-import {adapters} from './views';
+import {adapters, outerFileWrapper} from './views';
 
 const react = adapters.find(adapter => adapter.name === 'react')!;
 
@@ -78,5 +78,49 @@ describe('react adapter getPath', () => {
       '<h3 class="DiffFileHeader-module__file-name__a1"><code>old/foo.ts → new/bar.ts</code></h3>',
     );
     expect(react.getPath(container)).toBe('new/bar.ts');
+  });
+});
+
+describe('outerFileWrapper', () => {
+  it('returns the container itself in the classic flat list', () => {
+    document.body.innerHTML = `
+      <main><div id="list">
+        <div class="js-file" id="diff-a"></div>
+        <div class="js-file" id="diff-b"></div>
+      </div></main>`;
+    const container = document.querySelector('#diff-a')!;
+    expect(outerFileWrapper(container)).toBe(container);
+  });
+
+  it('climbs to the outermost single-file wrapper in the React view', () => {
+    document.body.innerHTML = `
+      <main><div id="list">
+        <div class="row"><div class="card"><div id="diff-a"></div></div></div>
+        <div class="row"><div class="card"><div id="diff-b"></div></div></div>
+      </div></main>`;
+    const wrapper = outerFileWrapper(document.querySelector('#diff-a')!);
+    expect(wrapper.className).toBe('row');
+  });
+
+  it('stops at a virtualized list with many slot children', () => {
+    document.body.innerHTML = `
+      <main><div id="list">
+        <div class="row">
+          <div id="diff-a"></div><i></i><i></i><i></i><i></i>
+        </div>
+      </div></main>`;
+    const container = document.querySelector('#diff-a')!;
+    // row has 5 element children - could be a slot list, so no climb
+    expect(outerFileWrapper(container)).toBe(container);
+  });
+
+  it('stops at an ancestor containing the file tree', () => {
+    document.body.innerHTML = `
+      <main><div id="layout">
+        <li class="js-tree-node"></li>
+        <div class="row"><div id="diff-a"></div></div>
+      </div></main>`;
+    const wrapper = outerFileWrapper(document.querySelector('#diff-a')!);
+    expect(wrapper.className).toBe('row');
   });
 });

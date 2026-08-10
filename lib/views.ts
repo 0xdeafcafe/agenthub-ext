@@ -186,6 +186,45 @@ export function adapterFor(container: Element): ViewAdapter | undefined {
 }
 
 /**
+ * The outermost element that belongs to exactly one PR file. In the React
+ * view the `div[id^="diff-"]` container can sit inside a per-file row/slot
+ * that keeps its own height, so hiding the container alone leaves scroll
+ * space behind - state classes go on this wrapper too.
+ *
+ * The climb is deliberately paranoid: it stops at anything holding more
+ * than one file container, anything holding the file tree or the toolbar,
+ * anything with many children (a virtualized list's slots), after 4 hops,
+ * and never reaches <main>. Worst case it returns the container itself,
+ * which is the pre-fix behaviour.
+ */
+export function outerFileWrapper(container: Element): Element {
+  let outer = container;
+  let parent = container.parentElement;
+  for (let hops = 0; parent && hops < 4 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+    if (parent.querySelectorAll(containerSelector).length !== 1) {
+      break;
+    }
+
+    if (parent.querySelector('li.js-tree-node, li[class*="file-tree-row"]')) {
+      break;
+    }
+
+    if (parent.querySelector('section[class*="PullRequestFilesToolbar"], .pr-toolbar')) {
+      break;
+    }
+
+    if (parent.childElementCount > 4) {
+      break;
+    }
+
+    outer = parent;
+    parent = parent.parentElement;
+  }
+
+  return outer;
+}
+
+/**
  * Plausibility guard against selector over-match (the React container
  * selector is prefix-based and could one day match a page-level wrapper).
  * A real file container is never <body>/<main> and never nests another
