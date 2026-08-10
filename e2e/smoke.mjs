@@ -67,26 +67,39 @@ try {
     const mine = document.getElementById('my-prs-repo-tab');
     const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
     const liOf = el => el?.closest('li');
+    const counters = [...(mine?.querySelectorAll('.Counter') ?? [])];
     return {
       href: mine?.getAttribute('href'),
       label: mine?.textContent?.trim(),
       rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
-      hasCounter: Boolean(mine?.querySelector('.Counter, [class*="Counter"]')),
+      counterCount: counters.length,
+      counterIsOurs: counters.length === 1 && counters[0].classList.contains('prix-counter'),
     };
   });
   check('tab exists', Boolean(tabInfo.href));
   check('tab labelled "My PRs"', tabInfo.label === 'My PRs', JSON.stringify(tabInfo.label));
   check('tab sits right after Pull requests tab', tabInfo.rightAfterPrTab);
-  check('tab has no cloned Counter', !tabInfo.hasCounter);
+  check(
+    'exactly one counter, our reserved placeholder (no cloned count)',
+    tabInfo.counterCount === 1 && tabInfo.counterIsOurs,
+    `counters=${tabInfo.counterCount}`,
+  );
   const query = new URLSearchParams(tabInfo.href?.split('?')[1] ?? '');
   check('tab href decodes to author:@me query', query.get('q') === 'is:pr is:open author:@me', tabInfo.href);
 
-  // Logged out, the author:@me count fetch redirects and must yield NO count
+  // Logged out, the author:@me count fetch redirects and must yield NO count —
+  // the reserved placeholder stays in the DOM but empty (no layout shift)
   await page.waitForTimeout(2500);
-  const myCount = await page.evaluate(
-    () => document.querySelector('#my-prs-repo-tab .prix-counter')?.textContent ?? null,
+  const counterState = await page.evaluate(() => {
+    const counter = document.querySelector('#my-prs-repo-tab .prix-counter');
+    return {present: Boolean(counter), text: counter?.textContent ?? null};
+  });
+  check('counter placeholder present even logged out', counterState.present, JSON.stringify(counterState));
+  check(
+    'no count shown when logged out (graceful)',
+    counterState.present && !/\d/.test(counterState.text ?? ''),
+    JSON.stringify(counterState),
   );
-  check('no count badge when logged out (graceful)', myCount === null, `counter=${myCount}`);
   await shot(page, '01-my-prs-tab.png');
 
   // Logged-out GitHub 302-redirects author:@me to /pulls/@me, so a real

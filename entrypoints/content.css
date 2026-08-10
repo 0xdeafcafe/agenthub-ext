@@ -165,8 +165,17 @@
   display: none !important;
 }
 
-/* My PRs tab counter — accent background so it reads as "yours" */
+/* My PRs tab counter — accent background so it reads as "yours".
+   The placeholder is inserted empty with the tab; min-width reserves its
+   geometry so a count arriving later changes text only, never layout. */
 .prix-counter.Counter {
+  min-width: 26px;
+  text-align: center;
+  background: transparent;
+  color: transparent;
+}
+
+.prix-counter.Counter:not(:empty) {
   background: var(--bgColor-accent-emphasis, #0969da);
   color: var(--fgColor-onEmphasis, #ffffff);
 }

@@ -6,7 +6,7 @@ import {ImpactBar, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
 import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
-import {ensureMyPrsTab} from '../lib/my-prs-tab';
+import {ensureMyPrsTab, preloadMyPrCounts} from '../lib/my-prs-tab';
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {actionToState, CategoryStateStore, type DisplayState} from '../lib/state';
@@ -111,6 +111,11 @@ async function init(signal: AbortSignal): Promise<void> {
     console.info('[PR Impact] disabled via localStorage "prix-disabled" — see README');
     return;
   }
+
+  // Start the storage read at document_start so a cached count is in memory
+  // before the nav mounts — the tab's counter placeholder can then be filled
+  // at insert time, before paint.
+  void preloadMyPrCounts();
 
   // Repo-nav feature runs on every repo page, not just PR files pages.
   // Idempotent; also re-evaluates the tab's selected state per navigation.

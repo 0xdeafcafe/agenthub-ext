@@ -65,17 +65,41 @@ export function extractUserLogin(html: string): string | null {
 const COUNT_STORAGE_KEY = 'prix:myPrCounts';
 const COUNT_TTL_MS = 5 * 60 * 1000;
 
+type CountCache = Record<string, {count: number; ts: number}>;
+
+let countsCache: CountCache | null = null;
+let countsPromise: Promise<CountCache> | null = null;
+
 /**
- * My open-PR count for the repo, cached in chrome.storage.local for ~5 min.
- * Logged out, GitHub redirects author:@me to /pulls/@me and drops the author
- * filter — detect that via the rendered search query and show no count.
+ * Reads the count cache into memory once. Called at document_start so a
+ * cached count is available synchronously-ish by the time the nav mounts and
+ * the tab is inserted — the placeholder can be filled before first paint.
+ */
+export function preloadMyPrCounts(): Promise<CountCache> {
+  countsPromise ??= browser.storage.local
+    .get(COUNT_STORAGE_KEY)
+    .then(stored => {
+      countsCache = (stored[COUNT_STORAGE_KEY] as CountCache | undefined) ?? {};
+      return countsCache;
+    })
+    .catch(error => {
+      console.error('[PR Impact]', 'my-prs-count-preload', error);
+      countsCache = {};
+      return countsCache;
+    });
+  return countsPromise;
+}
+
+/**
+ * My open-PR count for the repo. Fresh cache hits (< 5 min) are returned
+ * without a fetch; callers render stale hits immediately and only call this
+ * when a refetch is due. Logged out, GitHub redirects author:@me to
+ * /pulls/@me and drops the author filter — detect that and show no count.
  */
 export async function fetchMyPrCount(owner: string, repo: string): Promise<number | null> {
   const key = `${owner}/${repo}`;
   try {
-    const stored = await browser.storage.local.get(COUNT_STORAGE_KEY);
-    const all: Record<string, {count: number; ts: number}> =
-      (stored[COUNT_STORAGE_KEY] as Record<string, {count: number; ts: number}> | undefined) ?? {};
+    const all = await preloadMyPrCounts();
     const hit = all[key];
     if (hit && Date.now() - hit.ts < COUNT_TTL_MS) {
       return hit.count;
@@ -128,18 +152,40 @@ export function isMyPrsUrl(owner: string, repo: string, pathname: string, search
   return query.split(/\s+/).includes('author:@me');
 }
 
-/** Mirrors GitHub's own selected-tab expression: `selected` class + aria-current. */
+/**
+ * Mirrors GitHub's own selected-tab expression: `selected` class + aria-current.
+ * Read-then-write: once converged, repeat calls are zero-DOM-write no-ops
+ * (attribute/class writes are what cost layout on soft-nav re-evaluations).
+ */
 function applySelected(tab: Element, selected: boolean): void {
-  tab.classList.toggle('selected', selected);
-  if (selected) {
+  if (tab.classList.contains('selected') !== selected) {
+    tab.classList.toggle('selected', selected);
+  }
+
+  const hasCurrent = tab.getAttribute('aria-current') === 'page';
+  if (selected && !hasCurrent) {
     tab.setAttribute('aria-current', 'page');
-  } else {
+  } else if (!selected && hasCurrent) {
     tab.removeAttribute('aria-current');
   }
 
   // Primer React tabs use aria-selected instead of aria-current
-  if (tab.hasAttribute('aria-selected')) {
+  if (tab.hasAttribute('aria-selected') && tab.getAttribute('aria-selected') !== String(selected)) {
     tab.setAttribute('aria-selected', String(selected));
+  }
+}
+
+/**
+ * Writes the count into the tab's existing placeholder span, in place, only
+ * when the text actually changed. The node is never swapped or removed, so
+ * the counter can never cause a layout shift (geometry is reserved in CSS).
+ */
+function renderCount(tab: Element, count: number): void {
+  const counter = tab.querySelector<HTMLElement>('.prix-counter');
+  const text = String(count);
+  if (counter && counter.textContent !== text) {
+    counter.textContent = text;
+    counter.title = `${count} open PR${count === 1 ? '' : 's'} by you`;
   }
 }
 
@@ -199,7 +245,20 @@ function ensureMyPrsTabUnsafe(): void {
     }
 
     applySelected(link, false);
+
+    // Counter placeholder is part of the initial insert: its geometry is
+    // reserved in CSS, so a count arriving later changes text only, never
+    // layout. Fill it from the (preloaded) cache immediately when available.
+    const counter = document.createElement('span');
+    counter.className = 'Counter prix-counter';
+    link.append(counter);
+
     item.after(clone);
+
+    const cached = countsCache?.[`${owner}/${repo}`];
+    if (cached) {
+      renderCount(link, cached.count);
+    }
   }
 
   const myTab = document.getElementById(MY_PRS_TAB_ID);
@@ -207,27 +266,29 @@ function ensureMyPrsTabUnsafe(): void {
     return;
   }
 
-  // Open-PR count badge (async; silently absent logged out or on fetch failure)
-  void fetchMyPrCount(owner, repo)
-    .then(count => {
-      try {
-        const tab = document.getElementById(MY_PRS_TAB_ID);
-        if (count === null || !tab || tab.querySelector('.prix-counter')) {
-          return;
-        }
+  // Refresh the count in the background only when missing or stale; the
+  // cached value (however old) was already rendered at insert time.
+  const hit = countsCache?.[`${owner}/${repo}`];
+  if (!hit || Date.now() - hit.ts > COUNT_TTL_MS) {
+    void fetchMyPrCount(owner, repo)
+      .then(count => {
+        try {
+          if (count === null) {
+            return; // logged out / fetch failed — placeholder stays empty
+          }
 
-        const counter = document.createElement('span');
-        counter.className = 'Counter prix-counter';
-        counter.textContent = String(count);
-        counter.title = `${count} open PR${count === 1 ? '' : 's'} by you`;
-        tab.append(counter);
-      } catch (error) {
+          const tab = document.getElementById(MY_PRS_TAB_ID);
+          if (tab) {
+            renderCount(tab, count);
+          }
+        } catch (error) {
+          console.error('[PR Impact]', 'my-prs-count', error);
+        }
+      })
+      .catch(error => {
         console.error('[PR Impact]', 'my-prs-count', error);
-      }
-    })
-    .catch(error => {
-      console.error('[PR Impact]', 'my-prs-count', error);
-    });
+      });
+  }
 
   const active = isMyPrsUrl(owner, repo, location.pathname, location.search);
   applySelected(myTab, active);
