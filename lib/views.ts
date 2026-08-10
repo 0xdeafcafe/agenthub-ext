@@ -40,6 +40,35 @@ function parseDiffstatText(text: string): ChangedLines | null {
   return null;
 }
 
+/**
+ * The React files view renders per-file stats in the header as standalone
+ * "+58" / "−22" leaf elements (the minus can be U+2212, U+2013 or ASCII).
+ * Matched strictly so a file name containing a plus sign can't false-positive.
+ */
+function parsePlusMinusStats(header: Element): ChangedLines | null {
+  let added: number | null = null;
+  let removed: number | null = null;
+  for (const element of header.querySelectorAll('*')) {
+    if (element.children.length > 0) {
+      continue; // leaf elements only
+    }
+
+    const text = element.textContent?.trim() ?? '';
+    let match = /^\+([\d,]+)$/.exec(text);
+    if (match) {
+      added = Number(match[1].replaceAll(',', ''));
+      continue;
+    }
+
+    match = /^[−–-]([\d,]+)$/.exec(text);
+    if (match) {
+      removed = Number(match[1].replaceAll(',', ''));
+    }
+  }
+
+  return added === null && removed === null ? null : {added: added ?? 0, removed: removed ?? 0};
+}
+
 const classicAdapter: ViewAdapter = {
   name: 'classic',
   containerSelector: 'div.js-file',
@@ -105,8 +134,27 @@ const reactAdapter: ViewAdapter = {
     return queryByClassPrefix(container, 'DiffFileHeader-module__diff-file-header');
   },
   getChangedLines(container) {
-    // Row-level classes are hashed and undocumented; this is best-effort
-    // and returns null when rows aren't distinguishable.
+    // The header carries per-file stats as "+58" / "−22" leaf elements
+    // (aria-label text in some variants). Trust those first.
+    const header = this.getHeader(container);
+    if (header) {
+      const labeled = header.querySelector('[aria-label*="addition"], [title*="addition"]');
+      const fromLabel = parseDiffstatText(
+        labeled?.getAttribute('aria-label') ?? labeled?.getAttribute('title') ?? '',
+      );
+      if (fromLabel) {
+        return fromLabel;
+      }
+
+      const fromStats = parsePlusMinusStats(header);
+      if (fromStats) {
+        return fromStats;
+      }
+    }
+
+    // Last resort: count rendered rows. Row-level classes are hashed and
+    // undocumented; returns null when rows aren't distinguishable, and the
+    // caller treats the file as counted-but-unmeasured (0 lines, never poisoned).
     const rows = container.querySelectorAll('tr.diff-line-row');
     if (rows.length === 0) {
       return null;
