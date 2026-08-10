@@ -1,4 +1,4 @@
-/* PR Impact — all classes prefixed prix-, colors via Primer CSS variables only */
+/* PR Impact - all classes prefixed prix-, colours via Primer CSS variables only */
 
 .prix-bar {
   margin: 0 0 16px;
@@ -124,7 +124,7 @@
   border-radius: 10px;
 }
 
-/* File tree dimming (rows stay in place — removing them fights GitHub's tree filtering) */
+/* File tree dimming (rows stay in place - removing them fights GitHub's tree filtering) */
 .prix-tree-collapsed {
   opacity: 0.65;
 }
@@ -165,7 +165,7 @@
   display: none !important;
 }
 
-/* My PRs tab counter — accent background so it reads as "yours".
+/* My PRs tab counter - accent background so it reads as "yours".
    The placeholder is inserted empty with the tab; min-width reserves its
    geometry so a count arriving later changes text only, never layout. */
 .prix-counter.Counter {

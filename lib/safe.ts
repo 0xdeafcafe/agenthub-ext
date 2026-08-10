@@ -1,6 +1,6 @@
 /**
  * Error containment primitives. Content scripts run in an isolated world, so
- * a throw can never break GitHub's own JS — but an unhandled rejection or a
+ * a throw can never break GitHub's own JS - but an unhandled rejection or a
  * dead feature loop can leave the page half-augmented. Every entry point
  * (init, observer callback, event listener, async continuation) goes through
  * `guarded`, so one feature failing never takes the others down.

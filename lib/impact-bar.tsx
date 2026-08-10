@@ -17,7 +17,7 @@ export interface BarHandlers {
   onJump: (direction: 1 | -1) => void;
 }
 
-// Primer-safe emphasis colors; hex fallbacks match Primer's light theme.
+// Primer-safe emphasis colours; hex fallbacks match Primer's light theme.
 const PALETTE = [
   'var(--bgColor-accent-emphasis, #0969da)',
   'var(--bgColor-success-emphasis, #1a7f37)',
@@ -28,7 +28,7 @@ const PALETTE = [
 ];
 const CODE_COLOR = 'var(--bgColor-neutral-emphasis, #6e7781)';
 
-// Octicon paths (unfold, fold, chevron-up, chevron-down, copy) — 16px viewBox
+// Octicon paths (unfold, fold, chevron-up, chevron-down, copy) - 16px viewBox
 const ICONS = {
   unfold:
     'm8.177.677 2.896 2.896a.25.25 0 0 1-.177.427H8.75v1.25a.75.75 0 0 1-1.5 0V4H5.104a.25.25 0 0 1-.177-.427L7.823.677a.25.25 0 0 1 .354 0ZM7.25 10.75a.75.75 0 0 1 1.5 0V12h2.146a.25.25 0 0 1 .177.427l-2.896 2.896a.25.25 0 0 1-.354 0l-2.896-2.896A.25.25 0 0 1 5.104 12H7.25v-1.25Zm-5-2a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM6 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 6 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM12 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 12 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 1 0 1.5h.5Z',
@@ -60,7 +60,7 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
 
 /**
  * Slim stacked bar + legend. `update` only mutates text/width/state of
- * existing nodes — it runs on every lazily-mounted file container.
+ * existing nodes - it runs on every lazily-mounted file container.
  */
 export class ImpactBar {
   readonly element: HTMLElement;
@@ -174,9 +174,9 @@ export class ImpactBar {
       const chip = this.#chips.get(name)!;
       chip.dataset.state = state;
       chip.hidden = count.files === 0;
-      chip.title = `${name} — click to cycle visible → collapsed → hidden${reviewedText ? `\n${count.reviewed} of ${count.files} reviewed` : ''}`;
+      chip.title = `${name} - click to cycle visible → collapsed → hidden${reviewedText ? `\n${count.reviewed} of ${count.files} reviewed` : ''}`;
       this.#chipMeta.get(name)!.textContent = `${filesText}${linesText}${shareText}`;
-      segment.title = `${name} — ${filesText}${linesText}${shareText}${reviewedText}`;
+      segment.title = `${name} - ${filesText}${linesText}${shareText}${reviewedText}`;
     }
 
     this.#totals.textContent =

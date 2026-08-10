@@ -60,7 +60,7 @@ function applyState(container: Element, state: DisplayState): void {
     return;
   }
 
-  // Collapsing only works once a header child is tagged — otherwise the CSS
+  // Collapsing only works once a header child is tagged - otherwise the CSS
   // would hide every child. Fall back to visible rather than blank the file.
   const canCollapse = container.querySelector(':scope > .prix-header') !== null;
   container.classList.toggle('prix-collapsed', state === 'collapsed' && canCollapse);
@@ -108,12 +108,12 @@ function isDisabled(): boolean {
 
 async function init(signal: AbortSignal): Promise<void> {
   if (isDisabled()) {
-    console.info('[PR Impact] disabled via localStorage "prix-disabled" — see README');
+    console.info('[PR Impact] disabled via localStorage "prix-disabled" - see README');
     return;
   }
 
   // Start the storage read at document_start so a cached count is in memory
-  // before the nav mounts — the tab's counter placeholder can then be filled
+  // before the nav mounts - the tab's counter placeholder can then be filled
   // at insert time, before paint.
   void preloadMyPrCounts();
 
@@ -122,7 +122,7 @@ async function init(signal: AbortSignal): Promise<void> {
   // (ensureMyPrsTab is internally try/catch-guarded.)
   ensureMyPrsTab();
   // The nav can mount after init (deferred turbo frames) and turbo can
-  // re-render it (wiping our clone) — re-run whenever the PR tab (re)appears.
+  // re-render it (wiping our clone) - re-run whenever the PR tab (re)appears.
   observeSelector('a#pull-requests-tab, a#pull-requests-repo-tab', () => {
     ensureMyPrsTab();
   }, signal);
@@ -289,7 +289,7 @@ async function init(signal: AbortSignal): Promise<void> {
     {signal},
   );
 
-  // Reviewed toggles update via ajax after the click — re-read shortly after
+  // Reviewed toggles update via ajax after the click - re-read shortly after
   document.addEventListener(
     'click',
     guarded('reviewed-click', (event: MouseEvent) => {
@@ -319,7 +319,7 @@ async function init(signal: AbortSignal): Promise<void> {
   );
 
   // (No separate toolbar watcher: the bar is inserted when the first file
-  // container is processed — an unknown-DOM page must yield zero injections.)
+  // container is processed - an unknown-DOM page must yield zero injections.)
 
   observeSelector(containerSelector, container => {
     // Plausibility guard: never classify/state a page-level wrapper that
@@ -400,7 +400,7 @@ async function init(signal: AbortSignal): Promise<void> {
   observeSelector(headerSelector, header => {
     const container = header.closest(containerSelector);
     if (!container?.hasAttribute('data-prix-seen')) {
-      return; // container not processed yet — its own pass handles the header
+      return; // container not processed yet - its own pass handles the header
     }
 
     const entry = processed.find(p => p.container === container);

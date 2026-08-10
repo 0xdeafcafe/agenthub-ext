@@ -36,7 +36,7 @@ jobs:
       - run: npx wxt build
       # Produces .output/agenthubext-<version>-chrome.zip (verified locally)
       - run: npx wxt zip
-      # upload-artifact v4 skips hidden dirs like .output/ — stage via dist/
+      # upload-artifact v4 skips hidden dirs like .output/ - stage via dist/
       - run: mkdir -p dist && cp .output/agenthubext-*-chrome.zip dist/
       - uses: actions/upload-artifact@v4
         with:
@@ -59,7 +59,7 @@ jobs:
       # Produces .output/agenthubext-<version>-firefox.zip (verified locally;
       # the -sources.zip sibling is only needed for AMO review, not uploaded)
       - run: npx wxt zip -b firefox
-      # upload-artifact v4 skips hidden dirs like .output/ — stage via dist/
+      # upload-artifact v4 skips hidden dirs like .output/ - stage via dist/
       - run: mkdir -p dist && cp .output/agenthubext-*-firefox.zip dist/
       - uses: actions/upload-artifact@v4
         with:
@@ -78,7 +78,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx wxt build
-      # NOTE: exercised only on CI — the converter ships with full Xcode,
+      # NOTE: exercised only on CI - the converter ships with full Xcode,
       # which macos runners have. --force/--no-open keep it non-interactive.
       - name: Convert to Safari Xcode project
         run: >-
@@ -92,7 +92,7 @@ jobs:
         run: zip -r "$GITHUB_WORKSPACE/pr-impact-safari-xcode.zip" "PR Impact"
       - uses: actions/upload-artifact@v4
         with:
-          # UNSIGNED Xcode project — must be built in Xcode with an Apple ID
+          # UNSIGNED Xcode project - must be built in Xcode with an Apple ID
           name: pr-impact-safari-xcode-project
           path: pr-impact-safari-xcode.zip
           if-no-files-found: error

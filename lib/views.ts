@@ -56,7 +56,7 @@ const classicAdapter: ViewAdapter = {
   },
   getChangedLines(container) {
     // The header's diffstat area carries "N additions & M deletions" in
-    // aria-label/title/text depending on the page version — try all of it.
+    // aria-label/title/text depending on the page version - try all of it.
     const header = container.querySelector('.file-header');
     if (header) {
       const labeled = header.querySelector('[aria-label*="addition"], [title*="addition"]');
@@ -74,7 +74,7 @@ const classicAdapter: ViewAdapter = {
     }
 
     // Fallback: count rendered diff rows. Misses rows behind "Load diff"
-    // buttons on oversized diffs — acceptable, treated as counted-but-unexpanded.
+    // buttons on oversized diffs - acceptable, treated as counted-but-unexpanded.
     const added = container.querySelectorAll('.blob-code-addition').length;
     const removed = container.querySelectorAll('.blob-code-deletion').length;
     return added + removed > 0 ? {added, removed} : null;
@@ -89,7 +89,7 @@ const reactAdapter: ViewAdapter = {
   getPath(container) {
     // No data-path attribute in the React view; the path lives in the
     // header's <h3> and is polluted with invisible bidi marks. Renames
-    // render as "old → new" — the new path is what matters.
+    // render as "old → new" - the new path is what matters.
     const nameElement =
       container.querySelector('h3[class^="DiffFileHeader-module__file-name"] code') ??
       queryByClassPrefix(container, 'DiffFileHeader-module__file-name');

@@ -1,4 +1,4 @@
-// PR Impact — live smoke test against github.com (unauthenticated, public repos).
+// PR Impact - live smoke test against github.com (unauthenticated, public repos).
 // Uses Chrome for Testing from the Playwright cache (branded Chrome >= 137
 // ignores --load-extension; Arc refuses CDP launches). No browser downloads.
 //
@@ -18,7 +18,7 @@ mkdirSync(screenshotsDir, {recursive: true});
 const results = [];
 function check(name, condition, detail = '') {
   results.push({name, ok: Boolean(condition), detail});
-  console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`);
+  console.log(`${condition ? 'PASS' : 'FAIL'}  ${name}${detail ? ` - ${detail}` : ''}`);
 }
 
 async function shot(page, name) {
@@ -87,7 +87,7 @@ try {
   const query = new URLSearchParams(tabInfo.href?.split('?')[1] ?? '');
   check('tab href decodes to author:@me query', query.get('q') === 'is:pr is:open author:@me', tabInfo.href);
 
-  // Logged out, the author:@me count fetch redirects and must yield NO count —
+  // Logged out, the author:@me count fetch redirects and must yield NO count -
   // the reserved placeholder stays in the DOM but empty (no layout shift)
   await page.waitForTimeout(2500);
   const counterState = await page.evaluate(() => {
@@ -151,7 +151,7 @@ try {
       .slice(0, 4),
   );
   check('found merged PRs', prUrls.length > 0, prUrls.join(', '));
-  // Tiny PRs make jump/segment checks meaningless — pick one with enough files
+  // Tiny PRs make jump/segment checks meaningless - pick one with enough files
   let prPath = null;
   let prFileCount = 0;
   for (const url of prUrls) {
@@ -361,7 +361,7 @@ try {
   const commitsTab = await page.$(`a[href$="${prPath}/commits"]`);
   if (commitsTab) {
     await commitsTab.click();
-    await page.waitForURL('**/commits'); // the /files link also exists pre-navigation — wait for the URL
+    await page.waitForURL('**/commits'); // the /files link also exists pre-navigation - wait for the URL
     await page.click(`a[href$="${prPath}/files"]`);
     await page.waitForURL('**/files');
     await page.waitForSelector('div.js-file', {timeout: 60_000});
@@ -411,12 +411,12 @@ try {
   const back = await page.waitForSelector('#prix-bar', {timeout: 15_000}).then(() => true).catch(() => false);
   check('features return after removing the kill switch', back);
 
-  // ── 11. New React view (/changes) — expected to redirect when logged out ──
+  // ── 11. New React view (/changes) - expected to redirect when logged out ──
   console.log('\n== React view (/changes) ==');
   await page.goto(`https://github.com${prPath}/changes`, {waitUntil: 'domcontentloaded'});
   const onReactView = new URL(page.url()).pathname.endsWith('/changes');
   if (!onReactView) {
-    console.log('  SKIP: /changes redirected to /files — the React PR files view is not reachable unauthenticated');
+    console.log('  SKIP: /changes redirected to /files - the React PR files view is not reachable unauthenticated');
     await shot(page, '08-react-view-unavailable.png');
   } else {
     const reactContainers = await page.waitForSelector('div[id^="diff-"]', {timeout: 15_000}).catch(() => null);

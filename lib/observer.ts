@@ -33,7 +33,7 @@ export function observeSelector(
   const scan = (root: ParentNode): void => {
     const matches = root.querySelectorAll(selector);
     if (matches.length > MAX_MATCHES) {
-      console.error('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes — refusing to process`);
+      console.error('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes - refusing to process`);
       return;
     }
 

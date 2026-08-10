@@ -14,7 +14,7 @@
  *     Total               7       +368      -315
  *
  * The chart is aggregate-only (no file→category mapping), so it can never
- * drive classification — we use its category names/percentages as display
+ * drive classification - we use its category names/percentages as display
  * data alongside our glob-based counts.
  */
 

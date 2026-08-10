@@ -73,7 +73,7 @@ let countsPromise: Promise<CountCache> | null = null;
 /**
  * Reads the count cache into memory once. Called at document_start so a
  * cached count is available synchronously-ish by the time the nav mounts and
- * the tab is inserted — the placeholder can be filled before first paint.
+ * the tab is inserted - the placeholder can be filled before first paint.
  */
 export function preloadMyPrCounts(): Promise<CountCache> {
   countsPromise ??= browser.storage.local
@@ -94,7 +94,7 @@ export function preloadMyPrCounts(): Promise<CountCache> {
  * My open-PR count for the repo. Fresh cache hits (< 5 min) are returned
  * without a fetch; callers render stale hits immediately and only call this
  * when a refetch is due. Logged out, GitHub redirects author:@me to
- * /pulls/@me and drops the author filter — detect that and show no count.
+ * /pulls/@me and drops the author filter - detect that and show no count.
  */
 export async function fetchMyPrCount(owner: string, repo: string): Promise<number | null> {
   const key = `${owner}/${repo}`;
@@ -114,7 +114,7 @@ export async function fetchMyPrCount(owner: string, repo: string): Promise<numbe
 
     const html = await response.text();
     // Logged out, author:@me can't resolve (GitHub redirects to /pulls/@me
-    // and reports "0 Open") — only trust the count with a real user-login.
+    // and reports "0 Open") - only trust the count with a real user-login.
     if (!extractUserLogin(html) || !extractSearchQuery(html)?.includes('author:@me')) {
       return null;
     }
@@ -208,7 +208,7 @@ function ensureMyPrsTabUnsafe(): void {
     document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab') ??
     document.querySelector('nav[aria-label="Repository"] a[href$="/pulls"]');
   if (!pullsTab) {
-    // PRs disabled, or nav not rendered yet — stay out of the way
+    // PRs disabled, or nav not rendered yet - stay out of the way
     return;
   }
 
@@ -227,11 +227,11 @@ function ensureMyPrsTabUnsafe(): void {
     link.id = MY_PRS_TAB_ID;
     link.setAttribute('href', buildMyPrsHref(owner, repo));
     // Detach from GitHub's own selected-tab machinery (it would mark the clone
-    // selected on every /pulls/* page) — selected state is managed below
+    // selected on every /pulls/* page) - selected state is managed below
     link.removeAttribute('data-selected-links');
     link.classList.remove('js-selected-navigation-item');
 
-    // We have no count for "My PRs" — drop the cloned Counter rather than fake one
+    // We have no count for "My PRs" - drop the cloned Counter rather than fake one
     for (const counter of clone.querySelectorAll('.Counter, [class*="Counter"]')) {
       counter.remove();
     }
@@ -274,7 +274,7 @@ function ensureMyPrsTabUnsafe(): void {
       .then(count => {
         try {
           if (count === null) {
-            return; // logged out / fetch failed — placeholder stays empty
+            return; // logged out / fetch failed - placeholder stays empty
           }
 
           const tab = document.getElementById(MY_PRS_TAB_ID);
