@@ -59,6 +59,31 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
 }
 
 /**
+ * Where to mount the bar, given the element it should sit in front of.
+ * Never returns a flex/grid parent: inserting into GitHub's row layout
+ * makes the bar a layout column of its own (seen live on the React files
+ * view - bar column, then tree, then diff, with dead space under the bar).
+ * Walks up to the nearest block-flow ancestor and places the bar in front of
+ * the whole row instead. Null when nothing block-level is found nearby;
+ * better no bar than a mangled page.
+ */
+export function findBarPlacement(anchor: Element): {parent: Element; before: Element | null} | null {
+  let child: Element = anchor;
+  let parent = anchor.parentElement;
+  for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+    const {display} = getComputedStyle(parent);
+    if (!display.includes('flex') && !display.includes('grid')) {
+      return {parent, before: child};
+    }
+
+    child = parent;
+    parent = parent.parentElement;
+  }
+
+  return null;
+}
+
+/**
  * Slim stacked bar + legend. `update` only mutates text/width/state of
  * existing nodes - it runs on every lazily-mounted file container.
  */

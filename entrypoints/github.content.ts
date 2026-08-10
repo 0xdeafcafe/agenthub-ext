@@ -2,7 +2,7 @@ import './content.css';
 import {defineContentScript} from 'wxt/utils/define-content-script';
 import {actionFor, classify, compileRules, type CompiledRule} from '../lib/classifier';
 import {fetchConfig} from '../lib/config';
-import {ImpactBar, type CategoryCount} from '../lib/impact-bar';
+import {findBarPlacement, ImpactBar, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
 import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
@@ -33,7 +33,11 @@ function oneEvent(target: EventTarget, events: string[]): Promise<true> {
   });
 }
 
-/** Anchor for the impact bar: after the files toolbar, else before the first file container. */
+/**
+ * Anchor for the impact bar: after the files toolbar, else before the first
+ * file container - but always into a block-flow parent (findBarPlacement),
+ * so the bar can never become a column in GitHub's flex/grid row layout.
+ */
 function insertBar(bar: ImpactBar): void {
   if (document.getElementById('prix-bar')) {
     return;
@@ -42,15 +46,18 @@ function insertBar(bar: ImpactBar): void {
   const toolbar = document.querySelector(
     'section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar',
   );
-  if (toolbar?.parentElement) {
-    toolbar.parentElement.insertBefore(bar.element, toolbar.nextElementSibling);
+  const anchor = toolbar?.nextElementSibling ?? document.querySelector(containerSelector);
+  const placement = anchor
+    ? findBarPlacement(anchor)
+    : toolbar?.parentElement
+      ? {parent: toolbar.parentElement, before: null}
+      : null;
+  if (!placement) {
+    logError('bar placement', 'no block-flow ancestor found - skipping bar insertion');
     return;
   }
 
-  const firstFile = document.querySelector(containerSelector);
-  if (firstFile?.parentElement) {
-    firstFile.parentElement.insertBefore(bar.element, firstFile);
-  }
+  placement.parent.insertBefore(bar.element, placement.before);
 }
 
 function applyState(container: Element, state: DisplayState): void {

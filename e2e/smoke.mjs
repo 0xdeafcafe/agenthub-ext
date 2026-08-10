@@ -240,6 +240,15 @@ try {
     };
   });
   check('exactly one impact bar', classic.bars === 1, `bars=${classic.bars}`);
+  const barParentDisplay = await page.evaluate(() => {
+    const bar = document.getElementById('prix-bar');
+    return bar?.parentElement ? getComputedStyle(bar.parentElement).display : null;
+  });
+  check(
+    'bar never becomes a flex/grid column',
+    barParentDisplay !== null && !barParentDisplay.includes('flex') && !barParentDisplay.includes('grid'),
+    `parent display=${barParentDisplay}`,
+  );
   check('slim bar has segments without inner text', classic.segments >= 2, `segments=${classic.segments}`);
   check('legend chips render', classic.chips.length >= 2, JSON.stringify(classic.chips));
   check('totals shown', /\d+ files? · \d+ lines/.test(classic.totals ?? ''), classic.totals);
