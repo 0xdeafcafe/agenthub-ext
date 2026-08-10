@@ -3,12 +3,18 @@
  * matching `selector`, for elements already in the DOM and for elements
  * mounted later (GitHub mounts diff files lazily on scroll). Disconnects
  * when `signal` aborts (soft navigation teardown).
+ *
+ * Hardening: callback exceptions are logged and swallowed (one bad element
+ * must not kill the observer), and a scan bails loudly if the selector ever
+ * matches an absurd number of nodes (over-match guard against GitHub DOM
+ * changes turning a file selector into a page-level one).
  */
 export function observeSelector(
   selector: string,
   callback: (element: Element) => void,
   signal: AbortSignal,
 ): void {
+  const MAX_MATCHES = 5000;
   const visit = (element: Element): void => {
     // data attribute guard (rather than a WeakSet) so re-scans across
     // observer restarts on the same page don't double-process
@@ -17,11 +23,21 @@ export function observeSelector(
     }
 
     element.setAttribute('data-prix-seen', '');
-    callback(element);
+    try {
+      callback(element);
+    } catch (error) {
+      console.error('[PR Impact]', 'observer callback', error);
+    }
   };
 
   const scan = (root: ParentNode): void => {
-    for (const element of root.querySelectorAll(selector)) {
+    const matches = root.querySelectorAll(selector);
+    if (matches.length > MAX_MATCHES) {
+      console.error('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes — refusing to process`);
+      return;
+    }
+
+    for (const element of matches) {
       visit(element);
     }
   };

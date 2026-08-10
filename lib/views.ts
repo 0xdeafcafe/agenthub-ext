@@ -14,6 +14,8 @@ export interface ChangedLines {
 export interface ViewAdapter {
   name: 'classic' | 'react';
   containerSelector: string;
+  /** Matches the header element inside a container (used to re-apply badges after React re-renders). */
+  headerSelector: string;
   getPath: (container: Element) => string | null;
   getHeader: (container: Element) => Element | null;
   /** Best-effort; null when unparseable (caller falls back to file counts). */
@@ -41,6 +43,7 @@ function parseDiffstatText(text: string): ChangedLines | null {
 const classicAdapter: ViewAdapter = {
   name: 'classic',
   containerSelector: 'div.js-file',
+  headerSelector: '.file-header',
   getPath(container) {
     return (
       container.getAttribute('data-tagsearch-path') ??
@@ -81,6 +84,8 @@ const classicAdapter: ViewAdapter = {
 const reactAdapter: ViewAdapter = {
   name: 'react',
   containerSelector: 'div[id^="diff-"]',
+  headerSelector:
+    '[class^="DiffFileHeader-module__diff-file-header"], [class*="DiffFileHeader-module__diff-file-header"]',
   getPath(container) {
     // No data-path attribute in the React view; the path lives in the
     // header's <h3> and is polluted with invisible bidi marks. Renames
@@ -126,6 +131,26 @@ export const adapters: ViewAdapter[] = [classicAdapter, reactAdapter];
 
 export const containerSelector = adapters.map(adapter => adapter.containerSelector).join(', ');
 
+export const headerSelector = adapters.map(adapter => adapter.headerSelector).join(', ');
+
 export function adapterFor(container: Element): ViewAdapter | undefined {
   return adapters.find(adapter => container.matches(adapter.containerSelector));
+}
+
+/**
+ * Plausibility guard against selector over-match (the React container
+ * selector is prefix-based and could one day match a page-level wrapper).
+ * A real file container is never <body>/<main> and never nests another
+ * file container inside itself.
+ */
+export function isFileContainer(element: Element): boolean {
+  if (element === document.body || element === document.documentElement || element.tagName === 'MAIN') {
+    return false;
+  }
+
+  if (!adapterFor(element)) {
+    return false;
+  }
+
+  return !element.querySelector(containerSelector);
 }

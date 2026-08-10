@@ -47,6 +47,14 @@ try {
   const page = context.pages()[0] ?? (await context.newPage());
   page.setDefaultTimeout(30_000);
 
+  // Hardening: the extension must never log errors of its own
+  const prixErrors = [];
+  page.on('console', msg => {
+    if (msg.type() === 'error' && msg.text().includes('[PR Impact]')) {
+      prixErrors.push(msg.text());
+    }
+  });
+
   // ── 1. My PRs tab ────────────────────────────────────────────────────────
   console.log('\n== My PRs tab ==');
   await page.goto('https://github.com/refined-github/refined-github', {waitUntil: 'domcontentloaded'});
@@ -196,6 +204,10 @@ try {
   );
   check('files parsed', classic.fileCount > 0, `files=${classic.fileCount}`);
   check('badges in file headers', classic.badges > 0, `badges=${classic.badges}`);
+  const overMatch = await page.evaluate(() =>
+    [...document.querySelectorAll('.prix-collapsed, .prix-hidden')].filter(el => !el.matches('div.js-file')).length,
+  );
+  check('state classes only on file containers (over-match guard)', overMatch === 0, `strays=${overMatch}`);
   console.log(`  files=${classic.fileCount} collapsed=${classic.collapsed} hidden=${classic.hidden}`);
   await shot(page, '03-impact-bar-classic.png');
 
@@ -365,7 +377,28 @@ try {
   );
   await shot(page, '07-langwatch-chart.png');
 
-  // ── 10. New React view (/changes) — expected to redirect when logged out ──
+  // ── 10. Kill switch ──────────────────────────────────────────────────────
+  console.log('\n== Kill switch ==');
+  await page.evaluate(() => localStorage.setItem('prix-disabled', '1'));
+  await page.goto(`https://github.com${prPath}/files`, {waitUntil: 'domcontentloaded'});
+  await page.waitForSelector('div.js-file', {timeout: 60_000});
+  await page.waitForTimeout(2000);
+  const disabledState = await page.evaluate(() => ({
+    bar: document.querySelectorAll('#prix-bar').length,
+    tab: document.querySelectorAll('#my-prs-repo-tab').length,
+    badges: document.querySelectorAll('.prix-badge').length,
+  }));
+  check(
+    'prix-disabled kills all features',
+    disabledState.bar === 0 && disabledState.tab === 0 && disabledState.badges === 0,
+    JSON.stringify(disabledState),
+  );
+  await page.evaluate(() => localStorage.removeItem('prix-disabled'));
+  await page.goto(`https://github.com${prPath}/files`, {waitUntil: 'domcontentloaded'});
+  const back = await page.waitForSelector('#prix-bar', {timeout: 15_000}).then(() => true).catch(() => false);
+  check('features return after removing the kill switch', back);
+
+  // ── 11. New React view (/changes) — expected to redirect when logged out ──
   console.log('\n== React view (/changes) ==');
   await page.goto(`https://github.com${prPath}/changes`, {waitUntil: 'domcontentloaded'});
   const onReactView = new URL(page.url()).pathname.endsWith('/changes');
@@ -376,6 +409,8 @@ try {
     const reactContainers = await page.waitForSelector('div[id^="diff-"]', {timeout: 15_000}).catch(() => null);
     check('react view containers', Boolean(reactContainers));
   }
+
+  check('no [PR Impact] console errors all run', prixErrors.length === 0, prixErrors.slice(0, 2).join(' | '));
 } finally {
   await context.close();
 }

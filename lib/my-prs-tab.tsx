@@ -144,6 +144,14 @@ function applySelected(tab: Element, selected: boolean): void {
 }
 
 export function ensureMyPrsTab(): void {
+  try {
+    ensureMyPrsTabUnsafe();
+  } catch (error) {
+    console.error('[PR Impact]', 'my-prs-tab', error);
+  }
+}
+
+function ensureMyPrsTabUnsafe(): void {
   const [owner, repo] = location.pathname.split('/').filter(Boolean);
   if (!owner || !repo) {
     return;
@@ -200,18 +208,26 @@ export function ensureMyPrsTab(): void {
   }
 
   // Open-PR count badge (async; silently absent logged out or on fetch failure)
-  void fetchMyPrCount(owner, repo).then(count => {
-    const tab = document.getElementById(MY_PRS_TAB_ID);
-    if (count === null || !tab || tab.querySelector('.prix-counter')) {
-      return;
-    }
+  void fetchMyPrCount(owner, repo)
+    .then(count => {
+      try {
+        const tab = document.getElementById(MY_PRS_TAB_ID);
+        if (count === null || !tab || tab.querySelector('.prix-counter')) {
+          return;
+        }
 
-    const counter = document.createElement('span');
-    counter.className = 'Counter prix-counter';
-    counter.textContent = String(count);
-    counter.title = `${count} open PR${count === 1 ? '' : 's'} by you`;
-    tab.append(counter);
-  });
+        const counter = document.createElement('span');
+        counter.className = 'Counter prix-counter';
+        counter.textContent = String(count);
+        counter.title = `${count} open PR${count === 1 ? '' : 's'} by you`;
+        tab.append(counter);
+      } catch (error) {
+        console.error('[PR Impact]', 'my-prs-count', error);
+      }
+    })
+    .catch(error => {
+      console.error('[PR Impact]', 'my-prs-count', error);
+    });
 
   const active = isMyPrsUrl(owner, repo, location.pathname, location.search);
   applySelected(myTab, active);

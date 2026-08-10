@@ -28,6 +28,18 @@ When you open a PR's files page, PR Impact:
 
 It also adds a **My PRs** tab to the repository nav (right after Pull requests), linking to open PRs by you (`author:@me`), with an accent-colored counter of your open PRs (count fetch needs a login; absent logged out).
 
+## Troubleshooting / kill switch
+
+If PR Impact ever misbehaves on a page (GitHub changed their DOM, a selector over-matches), you can switch it off without uninstalling:
+
+1. Open any `github.com` page.
+2. Open DevTools → Console and run: `localStorage.setItem('prix-disabled', '1')`
+3. Reload the page. The extension now does nothing on every GitHub page (it logs `[PR Impact] disabled via localStorage "prix-disabled"` to confirm).
+
+Re-enable with `localStorage.removeItem('prix-disabled')` and reload.
+
+Errors from the extension are always logged with an `[PR Impact]` prefix in the console — include them (plus any React `removeChild`/`insertBefore` errors) when reporting a breakage.
+
 ## Dual-view support
 
 GitHub runs two coexisting versions of the PR files page:

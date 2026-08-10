@@ -8,8 +8,9 @@ import {injectBadge} from '../lib/badges';
 import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
 import {ensureMyPrsTab} from '../lib/my-prs-tab';
 import {observeSelector} from '../lib/observer';
+import {guarded, logError, rafThrottled} from '../lib/safe';
 import {actionToState, CategoryStateStore, type DisplayState} from '../lib/state';
-import {adapterFor, containerSelector} from '../lib/views';
+import {adapterFor, containerSelector, headerSelector, isFileContainer} from '../lib/views';
 
 // Matches /pull/:n/files and /pull/:n/changes (incl. /changes/<sha>..<sha>).
 // Local regex instead of github-url-detection: the installed version's
@@ -53,7 +54,16 @@ function insertBar(bar: ImpactBar): void {
 }
 
 function applyState(container: Element, state: DisplayState): void {
-  container.classList.toggle('prix-collapsed', state === 'collapsed');
+  // Over-match guard: state classes only ever land on plausible file containers
+  if (!isFileContainer(container)) {
+    logError('applyState refused a non-file-container element', container.tagName);
+    return;
+  }
+
+  // Collapsing only works once a header child is tagged — otherwise the CSS
+  // would hide every child. Fall back to visible rather than blank the file.
+  const canCollapse = container.querySelector(':scope > .prix-header') !== null;
+  container.classList.toggle('prix-collapsed', state === 'collapsed' && canCollapse);
   container.classList.toggle('prix-hidden', state === 'hidden');
 }
 
@@ -87,9 +97,24 @@ function reviewedOf(container: Element): boolean {
   return container.querySelector('button[class*="MarkAsViewedButton"]')?.getAttribute('aria-pressed') === 'true';
 }
 
+/** Kill switch: localStorage is reachable from the page console on github.com. */
+function isDisabled(): boolean {
+  try {
+    return localStorage.getItem('prix-disabled') === '1';
+  } catch {
+    return false;
+  }
+}
+
 async function init(signal: AbortSignal): Promise<void> {
+  if (isDisabled()) {
+    console.info('[PR Impact] disabled via localStorage "prix-disabled" — see README');
+    return;
+  }
+
   // Repo-nav feature runs on every repo page, not just PR files pages.
   // Idempotent; also re-evaluates the tab's selected state per navigation.
+  // (ensureMyPrsTab is internally try/catch-guarded.)
   ensureMyPrsTab();
   // The nav can mount after init (deferred turbo frames) and turbo can
   // re-render it (wiping our clone) — re-run whenever the PR tab (re)appears.
@@ -204,17 +229,23 @@ async function init(signal: AbortSignal): Promise<void> {
     },
     onJump: jump,
   });
-  const refreshBar = (): void => {
+  const refreshBar = rafThrottled(() => {
     bar.update(counts, stateOf);
-  };
+  });
 
   // Language "PR Impact Map" from the conversation page, when the bot posted one
-  void fetchImpactMap(owner, repo, prNumber).then(map => {
-    if (!signal.aborted && map) {
-      impactMap = map;
-      bar.setImpactMap(map);
-    }
-  });
+  void fetchImpactMap(owner, repo, prNumber)
+    .then(
+      guarded('impact-map', map => {
+        if (!signal.aborted && map) {
+          impactMap = map;
+          bar.setImpactMap(map);
+        }
+      }),
+    )
+    .catch(error => {
+      logError('impact-map', error);
+    });
 
   store.subscribe(category => {
     const state = stateOf(category);
@@ -238,7 +269,7 @@ async function init(signal: AbortSignal): Promise<void> {
   // the files page (checked: only g-c/g-i/g-p/g-a/g-s/t/c/i/a), so no conflict.
   document.addEventListener(
     'keydown',
-    event => {
+    guarded('keydown', (event: KeyboardEvent) => {
       if ((event.key !== 'J' && event.key !== 'K') || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
@@ -249,14 +280,14 @@ async function init(signal: AbortSignal): Promise<void> {
 
       event.preventDefault();
       jump(event.key === 'J' ? 1 : -1);
-    },
+    }),
     {signal},
   );
 
   // Reviewed toggles update via ajax after the click — re-read shortly after
   document.addEventListener(
     'click',
-    event => {
+    guarded('reviewed-click', (event: MouseEvent) => {
       const toggle = (event.target as Element).closest?.(
         '.js-reviewed-checkbox, .js-reviewed-toggle, button[class*="MarkAsViewedButton"]',
       );
@@ -278,21 +309,23 @@ async function init(signal: AbortSignal): Promise<void> {
           refreshBar();
         }
       }, 600);
-    },
+    }),
     {signal},
   );
 
-  // The toolbar mounts independently of the files; watch for both anchors.
-  observeSelector(
-    'section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar',
-    () => {
-      insertBar(bar);
-      refreshBar();
-    },
-    signal,
-  );
+  // (No separate toolbar watcher: the bar is inserted when the first file
+  // container is processed — an unknown-DOM page must yield zero injections.)
 
   observeSelector(containerSelector, container => {
+    // Plausibility guard: never classify/state a page-level wrapper that
+    // happens to match the prefix selector (contains real containers inside).
+    // Expected on every page (diff-layout-component matches div[id^="diff-"]),
+    // so this is a debug-level note, not an error.
+    if (!isFileContainer(container)) {
+      console.debug('[PR Impact]', 'skipped implausible container', container.id || container.className);
+      return;
+    }
+
     const adapter = adapterFor(container);
     const path = adapter?.getPath(container);
     if (!adapter || !path) {
@@ -354,6 +387,25 @@ async function init(signal: AbortSignal): Promise<void> {
       pending.push(row);
       pendingTreeRows.set(id, pending);
     }
+  }, signal);
+
+  // React can re-render a file header (e.g. after the viewed toggle), wiping
+  // our badge and the .prix-header tag. Headers are observed separately from
+  // containers (whose data-prix-seen guard would otherwise block re-apply).
+  observeSelector(headerSelector, header => {
+    const container = header.closest(containerSelector);
+    if (!container?.hasAttribute('data-prix-seen')) {
+      return; // container not processed yet — its own pass handles the header
+    }
+
+    const entry = processed.find(p => p.container === container);
+    if (!entry) {
+      return;
+    }
+
+    markHeaderChild(container, header);
+    injectBadge(header, entry.category);
+    applyState(container, stateOf(entry.category));
   }, signal);
 }
 
