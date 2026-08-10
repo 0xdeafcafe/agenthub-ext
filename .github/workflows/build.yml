@@ -1,0 +1,130 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+# contents:write is needed for the release job (gh release create/upload)
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run compile
+      - run: npm test
+
+  chrome:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx wxt build
+      # Produces .output/agenthubext-<version>-chrome.zip (verified locally)
+      - run: npx wxt zip
+      - uses: actions/upload-artifact@v4
+        with:
+          # This same zip works for Chrome, Arc, Edge and Brave
+          name: pr-impact-chrome-arc
+          path: .output/agenthubext-*-chrome.zip
+          if-no-files-found: error
+
+  firefox:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx wxt build -b firefox
+      # Produces .output/agenthubext-<version>-firefox.zip (verified locally;
+      # the -sources.zip sibling is only needed for AMO review, not uploaded)
+      - run: npx wxt zip -b firefox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-impact-firefox
+          path: .output/agenthubext-*-firefox.zip
+          if-no-files-found: error
+
+  safari:
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx wxt build
+      # NOTE: exercised only on CI — the converter ships with full Xcode,
+      # which macos runners have. --force/--no-open keep it non-interactive.
+      - name: Convert to Safari Xcode project
+        run: >-
+          xcrun safari-web-extension-converter .output/chrome-mv3
+          --project-location safari-out
+          --app-name "PR Impact"
+          --bundle-identifier com.agenthub.pr-impact
+          --swift --force --no-open
+      - name: Zip Xcode project
+        working-directory: safari-out
+        run: zip -r "$GITHUB_WORKSPACE/pr-impact-safari-xcode.zip" "PR Impact"
+      - uses: actions/upload-artifact@v4
+        with:
+          # UNSIGNED Xcode project — must be built in Xcode with an Apple ID
+          name: pr-impact-safari-xcode-project
+          path: pr-impact-safari-xcode.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [chrome, firefox, safari]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-chrome-arc
+          path: dist/chrome
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-firefox
+          path: dist/firefox
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-safari-xcode-project
+          path: dist/safari
+      # Stable asset names make releases/latest/download/<name> URLs work
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp dist/chrome/agenthubext-*-chrome.zip release-assets/pr-impact-chrome-mv3.zip
+          cp dist/firefox/agenthubext-*-firefox.zip release-assets/pr-impact-firefox-mv2.zip
+          cp dist/safari/pr-impact-safari-xcode.zip release-assets/pr-impact-safari-xcode.zip
+          ls -la release-assets
+      - name: Create or update release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* --generate-notes
+          fi
