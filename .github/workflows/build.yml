@@ -36,11 +36,13 @@ jobs:
       - run: npx wxt build
       # Produces .output/agenthubext-<version>-chrome.zip (verified locally)
       - run: npx wxt zip
+      # upload-artifact v4 skips hidden dirs like .output/ — stage via dist/
+      - run: mkdir -p dist && cp .output/agenthubext-*-chrome.zip dist/
       - uses: actions/upload-artifact@v4
         with:
           # This same zip works for Chrome, Arc, Edge and Brave
           name: pr-impact-chrome-arc
-          path: .output/agenthubext-*-chrome.zip
+          path: dist/agenthubext-*-chrome.zip
           if-no-files-found: error
 
   firefox:
@@ -57,10 +59,12 @@ jobs:
       # Produces .output/agenthubext-<version>-firefox.zip (verified locally;
       # the -sources.zip sibling is only needed for AMO review, not uploaded)
       - run: npx wxt zip -b firefox
+      # upload-artifact v4 skips hidden dirs like .output/ — stage via dist/
+      - run: mkdir -p dist && cp .output/agenthubext-*-firefox.zip dist/
       - uses: actions/upload-artifact@v4
         with:
           name: pr-impact-firefox
-          path: .output/agenthubext-*-firefox.zip
+          path: dist/agenthubext-*-firefox.zip
           if-no-files-found: error
 
   safari:
