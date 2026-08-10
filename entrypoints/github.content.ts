@@ -6,7 +6,7 @@ import {ImpactBar, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
 import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
-import {ensureMyPrsTab, preloadMyPrCounts} from '../lib/my-prs-tab';
+import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {actionToState, CategoryStateStore, type DisplayState} from '../lib/state';
@@ -121,11 +121,11 @@ async function init(signal: AbortSignal): Promise<void> {
   // Idempotent; also re-evaluates the tab's selected state per navigation.
   // (ensureMyPrsTab is internally try/catch-guarded.)
   ensureMyPrsTab();
-  // The nav can mount after init (deferred turbo frames) and turbo can
-  // re-render it (wiping our clone) - re-run whenever the PR tab (re)appears.
-  observeSelector('a#pull-requests-tab, a#pull-requests-repo-tab', () => {
-    ensureMyPrsTab();
-  }, signal);
+  // The nav mounts late and gets re-rendered by turbo/React partials, and a
+  // seen-once observer misses losses that don't produce a fresh PR tab node -
+  // enforce the tab invariant on every mutation batch for the page's lifetime
+  // (converges to zero DOM writes when the invariant holds).
+  watchMyPrsTab(signal);
 
   const match = PR_FILES_RE.exec(location.pathname);
   if (!match) {

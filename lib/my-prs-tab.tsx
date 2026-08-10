@@ -131,15 +131,38 @@ export async function fetchMyPrCount(owner: string, repo: string): Promise<numbe
   }
 }
 
-export function buildMyPrsHref(owner: string, repo: string): string {
-  // author:@me resolves to the logged-in user server-side, no username needed
-  const query = new URLSearchParams({q: 'is:pr is:open author:@me'}).toString();
+export function buildMyPrsHref(owner: string, repo: string, author = '@me'): string {
+  // author:@me resolves server-side, but GitHub 302s it to /pulls/@me, which
+  // complicates selected-state detection. Logged in we know the login and
+  // use it directly - deterministic, no redirect. @me stays as the fallback.
+  const query = new URLSearchParams({q: `is:pr is:open author:${author}`}).toString();
   return `/${owner}/${repo}/pulls?${query}`;
 }
 
-/** True only when on the repo's /pulls page with `author:@me` as a whole token of `q`. */
-export function isMyPrsUrl(owner: string, repo: string, pathname: string, search: string): boolean {
-  if (pathname.replace(/\/$/, '') !== `/${owner}/${repo}/pulls`) {
+/** The logged-in username from the current page's meta tag; null logged out. */
+function currentLogin(): string | null {
+  return document.querySelector('meta[name="user-login"]')?.getAttribute('content') || null;
+}
+
+/**
+ * True when the current URL is "my PRs" for this repo: either /pulls with
+ * author:@me or author:<login> as a whole token of q, or the /pulls/@me
+ * redirect target (which only means "mine" when logged in - logged out it
+ * lists everyone's open PRs).
+ */
+export function isMyPrsUrl(
+  owner: string,
+  repo: string,
+  login: string | null,
+  pathname: string,
+  search: string,
+): boolean {
+  const path = pathname.replace(/\/$/, '');
+  if (path === `/${owner}/${repo}/pulls/@me`) {
+    return login !== null;
+  }
+
+  if (path !== `/${owner}/${repo}/pulls`) {
     return false;
   }
 
@@ -149,7 +172,12 @@ export function isMyPrsUrl(owner: string, repo: string, pathname: string, search
   }
 
   // Token comparison, not substring: `author:@meow` or `xauthor:@me` must not match
-  return query.split(/\s+/).includes('author:@me');
+  const tokens = query.toLowerCase().split(/\s+/);
+  if (tokens.includes('author:@me')) {
+    return true;
+  }
+
+  return login !== null && tokens.includes(`author:${login.toLowerCase()}`);
 }
 
 /**
@@ -212,7 +240,11 @@ function ensureMyPrsTabUnsafe(): void {
     return;
   }
 
-  if (!document.getElementById(MY_PRS_TAB_ID)) {
+  const login = currentLogin();
+  const href = buildMyPrsHref(owner, repo, login ?? '@me');
+  const existing = document.getElementById(MY_PRS_TAB_ID);
+
+  if (!existing) {
     const item = pullsTab.closest('li');
     if (!item) {
       return;
@@ -225,7 +257,7 @@ function ensureMyPrsTabUnsafe(): void {
     }
 
     link.id = MY_PRS_TAB_ID;
-    link.setAttribute('href', buildMyPrsHref(owner, repo));
+    link.setAttribute('href', href);
     // Detach from GitHub's own selected-tab machinery (it would mark the clone
     // selected on every /pulls/* page) - selected state is managed below
     link.removeAttribute('data-selected-links');
@@ -236,9 +268,18 @@ function ensureMyPrsTabUnsafe(): void {
       counter.remove();
     }
 
+    // Take the PR tab's CURRENT icon (same page, same render) rather than
+    // trusting whatever the clone captured - nav markup variants drift
+    const currentIcon = pullsTab.querySelector('svg');
+    const clonedIcon = link.querySelector('svg');
+    if (currentIcon && clonedIcon) {
+      clonedIcon.replaceWith(currentIcon.cloneNode(true));
+    }
+
+    // Label replacement touches only the label span, never the icon
     const label =
       link.querySelector('span[data-content]') ??
-      [...link.querySelectorAll('span')].find(span => span.textContent?.trim());
+      [...link.querySelectorAll('span')].find(span => span.textContent?.trim() && !span.querySelector('svg'));
     if (label) {
       label.textContent = 'My PRs';
       label.setAttribute('data-content', 'My PRs');
@@ -258,6 +299,19 @@ function ensureMyPrsTabUnsafe(): void {
     const cached = countsCache?.[`${owner}/${repo}`];
     if (cached) {
       renderCount(link, cached.count);
+    }
+  } else {
+    // Invariant repairs on an existing tab, each convergent (no write when correct):
+    // correct href (login became known, or repo changed under a persistent nav)...
+    if (existing.getAttribute('href') !== href) {
+      existing.setAttribute('href', href);
+    }
+
+    // ...and position: GitHub re-renders can orphan or reorder our li
+    const prsItem = pullsTab.closest('li');
+    const myItem = existing.closest('li');
+    if (prsItem && myItem && prsItem.nextElementSibling !== myItem) {
+      prsItem.after(myItem);
     }
   }
 
@@ -290,9 +344,32 @@ function ensureMyPrsTabUnsafe(): void {
       });
   }
 
-  const active = isMyPrsUrl(owner, repo, location.pathname, location.search);
+  const active = isMyPrsUrl(owner, repo, login, location.pathname, location.search);
   applySelected(myTab, active);
   if (active) {
     applySelected(pullsTab, false);
   }
+}
+
+/**
+ * Persistent invariant watcher: on every DOM mutation batch, if a Pull
+ * requests tab exists, our tab must sit immediately after it with the right
+ * href and selected state. GitHub re-renders the nav subtree (deferred turbo
+ * frames, React partials) and can drop or reorder our clone without producing
+ * a fresh #pull-requests-tab node, so a seen-once selector observer is not
+ * enough. ensureMyPrsTab converges - when the invariant holds this is a
+ * couple of id lookups and zero DOM writes.
+ */
+export function watchMyPrsTab(signal: AbortSignal): void {
+  const observer = new MutationObserver(() => {
+    ensureMyPrsTab();
+  });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+  signal.addEventListener(
+    'abort',
+    () => {
+      observer.disconnect();
+    },
+    {once: true},
+  );
 }

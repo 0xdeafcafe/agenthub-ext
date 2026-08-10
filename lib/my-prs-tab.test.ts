@@ -16,37 +16,54 @@ describe('buildMyPrsHref', () => {
 
 describe('isMyPrsUrl', () => {
   it('matches the repo pulls page with author:@me in q', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=is%3Apr+is%3Aopen+author%3A%40me')).toBe(true);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=is:pr+is:open+author:@me')).toBe(true);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=author:@me')).toBe(true);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=is:open+author:@me+sort:updated-desc')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=is%3Apr+is%3Aopen+author%3A%40me')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=is:pr+is:open+author:@me')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=author:@me')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=is:open+author:@me+sort:updated-desc')).toBe(true);
   });
 
   it('tolerates a trailing slash on the path', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls/', '?q=author:@me')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls/', '?q=author:@me')).toBe(true);
   });
 
   it('rejects other pages even with author:@me in q', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/r/issues', '?q=author:@me')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls/123', '?q=author:@me')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r', '?q=author:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/issues', '?q=author:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls/123', '?q=author:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r', '?q=author:@me')).toBe(false);
   });
 
   it('rejects other repos', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/other/pulls', '?q=author:@me')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/other/r/pulls', '?q=author:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/other/pulls', '?q=author:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/other/r/pulls', '?q=author:@me')).toBe(false);
   });
 
   it('rejects author:@me as a substring of another token', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=author:@meow')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=xauthor:@me')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=author:@me.extra')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=author:@meow')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=xauthor:@me')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=author:@me.extra')).toBe(false);
   });
 
   it('rejects missing or unrelated q', () => {
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=is:pr+is:open')).toBe(false);
-    expect(isMyPrsUrl('o', 'r', '/o/r/pulls', '?q=author:octocat')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=is:pr+is:open')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls', '?q=author:octocat')).toBe(false);
+  });
+
+  it('matches author:<login> when logged in, case-insensitively', () => {
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls', '?q=is:pr+is:open+author:octocat')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls', '?q=author:OctoCat')).toBe(true);
+  });
+
+  it('rejects another user\'s login and substring logins', () => {
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls', '?q=author:hubot')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls', '?q=author:octocat2')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls', '?q=xauthor:octocat')).toBe(false);
+  });
+
+  it('treats /pulls/@me as mine only when logged in', () => {
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/o/r/pulls/@me', '')).toBe(true);
+    expect(isMyPrsUrl('o', 'r', null, '/o/r/pulls/@me', '')).toBe(false);
+    expect(isMyPrsUrl('o', 'r', 'octocat', '/other/r/pulls/@me', '')).toBe(false);
   });
 });
 
