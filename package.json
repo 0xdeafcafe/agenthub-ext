@@ -1,0 +1,26 @@
+{
+  "name": "agenthubext",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "postinstall": "wxt prepare",
+    "test": "vitest run",
+    "test:e2e": "node e2e/smoke.mjs",
+    "compile": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dom-chef": "^5.0.1",
+    "picomatch": "^4.0.3",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3",
+    "playwright-core": "^1.62.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
+    "wxt": "^0.20.6"
+  }
+}

@@ -1,0 +1,172 @@
+/* PR Impact — all classes prefixed prix-, colors via Primer CSS variables only */
+
+.prix-bar {
+  margin: 0 0 16px;
+  padding: 10px 12px 8px;
+  background: var(--bgColor-default, #ffffff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+}
+
+.prix-bar-track {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prix-segment {
+  flex-basis: 0;
+  min-width: 0;
+}
+
+.prix-bar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin-top: 8px;
+}
+
+.prix-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--fgColor-default, #1f2328);
+  white-space: nowrap;
+}
+
+.prix-chip:hover {
+  background: var(--bgColor-muted, #f6f8fa);
+}
+
+.prix-chip[data-state='collapsed'] {
+  opacity: 0.65;
+}
+
+.prix-chip[data-state='hidden'] {
+  opacity: 0.4;
+}
+
+.prix-chip[data-state='hidden'] .prix-chip-name {
+  text-decoration: line-through;
+}
+
+.prix-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.prix-chip-meta {
+  color: var(--fgColor-muted, #656d76);
+}
+
+.prix-spacer {
+  flex: 1;
+}
+
+.prix-totals {
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--fgColor-muted, #656d76);
+  white-space: nowrap;
+}
+
+.prix-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--fgColor-muted, #656d76);
+}
+
+.prix-control:hover {
+  background: var(--bgColor-muted, #f6f8fa);
+  color: var(--fgColor-default, #1f2328);
+}
+
+.prix-control svg {
+  fill: currentColor;
+}
+
+.prix-chart {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--fgColor-muted, #656d76);
+}
+
+/* Per-file header badge */
+.prix-badge {
+  margin-left: 8px;
+  padding: 0 7px;
+  align-self: center;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--fgColor-muted, #656d76);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 10px;
+}
+
+/* File tree dimming (rows stay in place — removing them fights GitHub's tree filtering) */
+.prix-tree-collapsed {
+  opacity: 0.65;
+}
+
+.prix-tree-hidden {
+  opacity: 0.35;
+}
+
+.prix-tree-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--fgColor-muted, #656d76);
+}
+
+/* Jump target flash */
+@keyframes prix-flash-outline {
+  0% {
+    outline: 2px solid var(--bgColor-accent-emphasis, #0969da);
+    outline-offset: 2px;
+  }
+
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+}
+
+.prix-flash {
+  animation: prix-flash-outline 1.2s ease-out;
+}
+
+/* Collapsed: header child (tagged .prix-header by the adapter) stays, rest goes */
+.prix-collapsed > :not(.prix-header) {
+  display: none !important;
+}
+
+.prix-hidden {
+  display: none !important;
+}
+
+/* My PRs tab counter — accent background so it reads as "yours" */
+.prix-counter.Counter {
+  background: var(--bgColor-accent-emphasis, #0969da);
+  color: var(--fgColor-onEmphasis, #ffffff);
+}
