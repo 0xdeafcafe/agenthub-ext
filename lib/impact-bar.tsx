@@ -104,6 +104,10 @@ export class ImpactBar {
 
     this.element = (
       <div className="prix-bar" id="prix-bar">
+        <div className="prix-bar-header">
+          <span className="prix-bar-title">Impact</span>
+          {this.#totals}
+        </div>
         <div className="prix-bar-track">
           {categories.map((name, index) => {
             const segment = (
@@ -118,15 +122,16 @@ export class ImpactBar {
         <div className="prix-bar-legend">
           {categories.map((name, index) => {
             const meta = <span className="prix-chip-meta" /> as unknown as HTMLSpanElement;
-            const dot = (<span className="prix-dot" />) as HTMLElement;
-            dot.style.backgroundColor = name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length];
             const chip = (
               <button type="button" className="prix-chip" data-category={name} data-state="visible">
-                {dot}
+                <span className="prix-dot" />
                 <span className="prix-chip-name">{name}</span>
                 {meta}
               </button>
             ) as unknown as HTMLElement;
+            // The category colour as a custom property so CSS can render the
+            // hollow-dot states (border in the category colour) without JS
+            chip.style.setProperty('--prix-cat', name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length]);
             chip.addEventListener('click', () => {
               handlers.onCycle(name);
             });
@@ -135,7 +140,6 @@ export class ImpactBar {
             return chip;
           })}
           <span className="prix-spacer" />
-          {this.#totals}
           {controlButton(ICONS.up, 'Previous visible file (Shift+K)', () => {
             handlers.onJump(-1);
           })}
@@ -193,15 +197,21 @@ export class ImpactBar {
 
       const filesText = `${count.files} ${count.files === 1 ? 'file' : 'files'}`;
       const linesText = lines > 0 ? ` · ${lines} lines` : '';
-      const shareText = total > 0 && count.files > 0 ? ` · ${Math.round(share * 100)}%` : '';
+      const percent = `${Math.round(share * 100)}%`;
+      const shareText = total > 0 && count.files > 0 ? ` · ${percent}` : '';
       const reviewedText = count.reviewed > 0 ? ` · ${count.reviewed} of ${count.files} reviewed` : '';
+      const detail = `${name} - ${filesText}${linesText}${shareText}${reviewedText}`;
 
+      // The chip shows name + percentage only; the full breakdown and the
+      // cycle explanation live in the tooltip and aria-label.
+      const NEXT_ACTION: Record<DisplayState, string> = {visible: 'collapse', collapsed: 'hide', hidden: 'show'};
       const chip = this.#chips.get(name)!;
       chip.dataset.state = state;
       chip.hidden = count.files === 0;
-      chip.title = `${name} - click to cycle visible → collapsed → hidden${reviewedText ? `\n${count.reviewed} of ${count.files} reviewed` : ''}`;
-      this.#chipMeta.get(name)!.textContent = `${filesText}${linesText}${shareText}`;
-      segment.title = `${name} - ${filesText}${linesText}${shareText}${reviewedText}`;
+      chip.title = `${detail} - click to cycle visible → collapsed → hidden`;
+      chip.setAttribute('aria-label', `${name}, ${percent}, ${state} - click to ${NEXT_ACTION[state]}`);
+      this.#chipMeta.get(name)!.textContent = percent;
+      segment.title = detail;
     }
 
     this.#totals.textContent =

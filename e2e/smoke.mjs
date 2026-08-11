@@ -267,6 +267,8 @@ try {
   check('state classes only on file containers (over-match guard)', overMatch === 0, `strays=${overMatch}`);
   console.log(`  files=${classic.fileCount} collapsed=${classic.collapsed} hidden=${classic.hidden}`);
   await shot(page, '03-impact-bar-classic.png');
+  await page.locator('#prix-bar').screenshot({path: 'e2e/screenshots/03b-impact-bar-closeup.png'});
+  console.log('  screenshot: e2e/screenshots/03b-impact-bar-closeup.png');
 
   // ── 3. File tree dimming ─────────────────────────────────────────────────
   console.log('\n== File tree sync ==');

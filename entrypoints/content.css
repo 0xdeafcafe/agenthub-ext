@@ -2,15 +2,35 @@
 
 .prix-bar {
   margin: 0 0 16px;
-  padding: 10px 12px 8px;
+  padding: 12px 16px;
   background: var(--bgColor-default, #ffffff);
   border: 1px solid var(--borderColor-default, #d1d9e0);
-  border-radius: 6px;
+  border-radius: var(--borderRadius-medium, 6px);
 }
 
+.prix-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.prix-bar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-default, #1f2328);
+}
+
+.prix-totals {
+  font-size: 12px;
+  color: var(--fgColor-muted, #656d76);
+  white-space: nowrap;
+}
+
+/* One continuous bar, like GitHub's repo language bar */
 .prix-bar-track {
   display: flex;
-  gap: 2px;
+  gap: 0;
   height: 8px;
   border-radius: 4px;
   overflow: hidden;
@@ -33,11 +53,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 6px;
+  padding: 3px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--borderRadius-medium, 6px);
   background: transparent;
   cursor: pointer;
+  font-family: inherit;
   font-size: 12px;
   line-height: 18px;
   color: var(--fgColor-default, #1f2328);
@@ -45,26 +66,42 @@
 }
 
 .prix-chip:hover {
-  background: var(--bgColor-muted, #f6f8fa);
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
 }
 
-.prix-chip[data-state='collapsed'] {
-  opacity: 0.65;
+.prix-chip:focus-visible,
+.prix-control:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, var(--bgColor-accent-emphasis, #0969da));
+  outline-offset: 1px;
 }
 
-.prix-chip[data-state='hidden'] {
-  opacity: 0.4;
+.prix-chip-name {
+  font-weight: 600;
+}
+
+/* Category colour arrives as --prix-cat from JS; states restyle the dot */
+.prix-dot {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--prix-cat);
+}
+
+.prix-chip[data-state='collapsed'] .prix-dot {
+  background: transparent;
+  border: 2px solid var(--prix-cat);
+}
+
+.prix-chip[data-state='hidden'] .prix-dot {
+  background: transparent;
+  border: 2px solid var(--fgColor-muted, #656d76);
 }
 
 .prix-chip[data-state='hidden'] .prix-chip-name {
+  color: var(--fgColor-muted, #656d76);
   text-decoration: line-through;
-}
-
-.prix-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex: none;
 }
 
 .prix-chip-meta {
@@ -75,13 +112,6 @@
   flex: 1;
 }
 
-.prix-totals {
-  margin-right: 4px;
-  font-size: 12px;
-  color: var(--fgColor-muted, #656d76);
-  white-space: nowrap;
-}
-
 .prix-control {
   display: inline-flex;
   align-items: center;
@@ -90,14 +120,14 @@
   height: 28px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--borderRadius-medium, 6px);
   background: transparent;
   cursor: pointer;
   color: var(--fgColor-muted, #656d76);
 }
 
 .prix-control:hover {
-  background: var(--bgColor-muted, #f6f8fa);
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
   color: var(--fgColor-default, #1f2328);
 }
 
@@ -106,7 +136,7 @@
 }
 
 .prix-chart {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--fgColor-muted, #656d76);
 }
