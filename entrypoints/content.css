@@ -1,8 +1,8 @@
 /* PR Impact - all classes prefixed prix-, colours via Primer CSS variables only */
 
 .prix-bar {
-  margin: 0 0 16px;
-  padding: 12px 16px;
+  margin: 0 0 20px;
+  padding: 16px 20px;
   background: var(--bgColor-default, #ffffff);
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: var(--borderRadius-medium, 6px);
@@ -12,7 +12,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .prix-bar-title {
@@ -45,15 +45,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 4px;
-  margin-top: 8px;
+  gap: 4px 8px;
+  margin-top: 12px;
 }
 
 .prix-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
+  gap: 8px;
+  padding: 5px 10px;
   border: 0;
   border-radius: var(--borderRadius-medium, 6px);
   background: transparent;
@@ -116,8 +116,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   border-radius: var(--borderRadius-medium, 6px);
@@ -136,7 +136,7 @@
 }
 
 .prix-chart {
-  margin-top: 8px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--fgColor-muted, #656d76);
 }
@@ -205,17 +205,21 @@
   height: auto !important;
 }
 
-/* My PRs tab counter - accent background so it reads as "yours".
-   The placeholder is inserted empty with the tab; min-width reserves its
-   geometry so a count arriving later changes text only, never layout. */
-.prix-counter.Counter {
+/* Custom tab counters. The placeholder is inserted empty with the tab;
+   min-width reserves its geometry so a count arriving later changes text
+   only, never layout. My PRs gets the accent fill (it reads as "yours");
+   Review requested keeps GitHub's default grey Counter so they don't compete. */
+.prix-tab-counter.Counter {
   min-width: 26px;
   text-align: center;
+}
+
+.prix-tab-counter.Counter:empty {
   background: transparent;
   color: transparent;
 }
 
-.prix-counter.Counter:not(:empty) {
+.prix-tab-counter--accent.Counter:not(:empty) {
   background: var(--bgColor-accent-emphasis, #0969da);
   color: var(--fgColor-onEmphasis, #ffffff);
 }

@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {buildMyPrsHref, extractSearchQuery, extractUserLogin, isMyPrsUrl, parseOpenPullsCount} from './my-prs-tab';
+import {activePullsTabId, buildMyPrsHref, buildPullsHref, extractSearchQuery, extractUserLogin, isMyPrsUrl, isTabActive, parseOpenPullsCount, PULL_TABS} from './my-prs-tab';
 
 describe('buildMyPrsHref', () => {
   it('builds a properly URL-encoded pulls URL', () => {
@@ -135,5 +135,55 @@ describe('extractUserLogin', () => {
 
   it('returns null when the meta tag is absent', () => {
     expect(extractUserLogin('<html><head></head></html>')).toBeNull();
+  });
+});
+
+describe('buildPullsHref', () => {
+  it('builds a review-requested URL', () => {
+    expect(buildPullsHref('o', 'r', 'review-requested', '@me')).toBe(
+      '/o/r/pulls?q=is%3Apr+is%3Aopen+review-requested%3A%40me',
+    );
+    expect(buildPullsHref('o', 'r', 'review-requested', 'octocat')).toBe(
+      '/o/r/pulls?q=is%3Apr+is%3Aopen+review-requested%3Aoctocat',
+    );
+  });
+});
+
+describe('isTabActive (review requested)', () => {
+  const reviewTab = PULL_TABS[1];
+
+  it('matches review-requested:@me and review-requested:<login>', () => {
+    expect(isTabActive(reviewTab, 'o', 'r', null, '/o/r/pulls', '?q=is:pr+review-requested:@me')).toBe(true);
+    expect(isTabActive(reviewTab, 'o', 'r', 'octocat', '/o/r/pulls', '?q=review-requested:OctoCat')).toBe(true);
+  });
+
+  it('does not match the author qualifier or substring lookalikes', () => {
+    expect(isTabActive(reviewTab, 'o', 'r', null, '/o/r/pulls', '?q=author:@me')).toBe(false);
+    expect(isTabActive(reviewTab, 'o', 'r', null, '/o/r/pulls', '?q=review-requested:@meh')).toBe(false);
+  });
+
+  it('treats /pulls/review-requested/@me as mine only when logged in', () => {
+    expect(isTabActive(reviewTab, 'o', 'r', 'octocat', '/o/r/pulls/review-requested/@me', '')).toBe(true);
+    expect(isTabActive(reviewTab, 'o', 'r', null, '/o/r/pulls/review-requested/@me', '')).toBe(false);
+  });
+
+  it('does not claim the plain /pulls/@me path', () => {
+    expect(isTabActive(reviewTab, 'o', 'r', 'octocat', '/o/r/pulls/@me', '')).toBe(false);
+  });
+});
+
+describe('activePullsTabId', () => {
+  it('picks the matching tab', () => {
+    expect(activePullsTabId('o', 'r', null, '/o/r/pulls', '?q=author:@me')).toBe('my-prs-repo-tab');
+    expect(activePullsTabId('o', 'r', null, '/o/r/pulls', '?q=review-requested:@me')).toBe(
+      'review-requested-repo-tab',
+    );
+    expect(activePullsTabId('o', 'r', null, '/o/r/pulls', '?q=is:pr')).toBeNull();
+  });
+
+  it('table order wins when a query matches both', () => {
+    expect(activePullsTabId('o', 'r', null, '/o/r/pulls', '?q=author:@me+review-requested:@me')).toBe(
+      'my-prs-repo-tab',
+    );
   });
 });

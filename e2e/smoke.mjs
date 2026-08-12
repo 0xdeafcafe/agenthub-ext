@@ -73,7 +73,7 @@ try {
       label: mine?.textContent?.trim(),
       rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
       counterCount: counters.length,
-      counterIsOurs: counters.length === 1 && counters[0].classList.contains('prix-counter'),
+      counterIsOurs: counters.length === 1 && counters[0].classList.contains('prix-tab-counter'),
     };
   });
   check('tab exists', Boolean(tabInfo.href));
@@ -87,11 +87,39 @@ try {
   const query = new URLSearchParams(tabInfo.href?.split('?')[1] ?? '');
   check('tab href decodes to author:@me query', query.get('q') === 'is:pr is:open author:@me', tabInfo.href);
 
+  const reviewInfo = await page.evaluate(() => {
+    const review = document.getElementById('review-requested-repo-tab');
+    const mine = document.getElementById('my-prs-repo-tab');
+    const liOf = el => el?.closest('li');
+    const counter = review?.querySelector('.prix-tab-counter');
+    return {
+      present: Boolean(review),
+      label: review?.textContent?.trim(),
+      href: review?.getAttribute('href'),
+      afterMine: liOf(mine)?.nextElementSibling === liOf(review),
+      placeholder: Boolean(counter),
+      accent: counter?.classList.contains('prix-tab-counter--accent') ?? null,
+    };
+  });
+  check('Review requested tab exists', reviewInfo.present);
+  check('Review requested tab sits after My PRs', reviewInfo.afterMine);
+  check('Review requested label', reviewInfo.label === 'Review requested', JSON.stringify(reviewInfo.label));
+  const reviewQuery = new URLSearchParams(reviewInfo.href?.split('?')[1] ?? '');
+  check(
+    'Review requested href decodes to review-requested:@me',
+    reviewQuery.get('q') === 'is:pr is:open review-requested:@me',
+    reviewInfo.href,
+  );
+  check(
+    'Review requested counter is the default grey, not accent',
+    reviewInfo.placeholder && reviewInfo.accent === false,
+  );
+
   // Logged out, the author:@me count fetch redirects and must yield NO count -
   // the reserved placeholder stays in the DOM but empty (no layout shift)
   await page.waitForTimeout(2500);
   const counterState = await page.evaluate(() => {
-    const counter = document.querySelector('#my-prs-repo-tab .prix-counter');
+    const counter = document.querySelector('#my-prs-repo-tab .prix-tab-counter');
     return {present: Boolean(counter), text: counter?.textContent ?? null};
   });
   check('counter placeholder present even logged out', counterState.present, JSON.stringify(counterState));
@@ -120,11 +148,13 @@ try {
     return {
       back: Boolean(mine),
       rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
-      counterBack: Boolean(mine?.querySelector('.prix-counter')),
+      counterBack: Boolean(mine?.querySelector('.prix-tab-counter')),
+      reviewAfterMine: liOf(mine)?.nextElementSibling === liOf(document.getElementById('review-requested-repo-tab')),
     };
   });
   check('tab re-inserts after GitHub drops it', reinserted.back && reinserted.rightAfterPrTab, JSON.stringify(reinserted));
   check('re-inserted tab has its counter placeholder', reinserted.counterBack);
+  check('Review requested tab stays after My PRs', reinserted.reviewAfterMine);
   await shot(page, '01-my-prs-tab.png');
 
   // Logged-out GitHub 302-redirects author:@me to /pulls/@me, so a real
@@ -170,6 +200,49 @@ try {
     'original Pull requests tab deselected',
     selected.prs.ariaCurrent === null && selected.prs.selectedClass === false,
     JSON.stringify(selected.prs),
+  );
+
+  // Review requested selected state + mutual exclusion
+  await page.evaluate(() => {
+    history.replaceState(null, '', '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+review-requested%3A%40me');
+    document.dispatchEvent(new Event('turbo:render'));
+  });
+  await page.waitForTimeout(500);
+  const reviewSelected = await page.evaluate(() => ({
+    review: document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current') ?? null,
+    mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
+    prs: document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')?.getAttribute('aria-current') ?? null,
+  }));
+  check(
+    'Review requested tab selected on its query, others not',
+    reviewSelected.review === 'page' && reviewSelected.mine === null && reviewSelected.prs === null,
+    JSON.stringify(reviewSelected),
+  );
+
+  // Regression: GitHub re-asserts its tab via attribute flips only - the
+  // attribute observer must put our tab back. Back on the My PRs URL first.
+  await page.evaluate(() => {
+    history.replaceState(null, '', '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me');
+    document.dispatchEvent(new Event('turbo:render'));
+  });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const mine = document.getElementById('my-prs-repo-tab');
+    const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
+    mine?.removeAttribute('aria-current');
+    mine?.classList.remove('selected');
+    prs?.setAttribute('aria-current', 'page');
+    prs?.classList.add('selected');
+  });
+  await page.waitForTimeout(600);
+  const reasserted = await page.evaluate(() => ({
+    mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
+    prs: document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')?.getAttribute('aria-current') ?? null,
+  }));
+  check(
+    'selected state re-applied after GitHub attribute flips',
+    reasserted.mine === 'page' && reasserted.prs === null,
+    JSON.stringify(reasserted),
   );
   await shot(page, '02-my-prs-tab-selected.png');
 
@@ -282,7 +355,19 @@ try {
     };
   });
   check('tree rows found', tree.fileRows > 0, `rows=${tree.fileRows}`);
-  check('collapsed category dims tree rows', tree.collapsed > 0, JSON.stringify(tree));
+  // PR mix independent: collapse everything, then restore
+  await page.click('#prix-bar .prix-control[aria-label="Collapse all categories"]');
+  await page.waitForTimeout(400);
+  const treeCollapsed = await page.evaluate(
+    () => document.querySelectorAll('li.js-tree-node.prix-tree-collapsed').length,
+  );
+  check('collapsed categories dim tree rows', treeCollapsed > 0, `collapsedRows=${treeCollapsed}`);
+  await page.click('#prix-bar .prix-control[aria-label="Expand all categories"]');
+  await page.waitForTimeout(400);
+  const treeRestored = await page.evaluate(
+    () => document.querySelectorAll('li.js-tree-node.prix-tree-collapsed, li.js-tree-node.prix-tree-hidden').length,
+  );
+  check('expanding undims tree rows', treeRestored === 0, `dimmed=${treeRestored}`);
 
   // ── 4. Chip interaction: cycle tests collapsed → hidden → visible → collapsed ──
   console.log('\n== Chip interaction ==');
@@ -338,15 +423,37 @@ try {
       check('visible files have height again', visibleStep?.zeroHeight === false);
     }
 
-    // Tree rows follow too (tests passed through hidden in the cycle)
-    const treeAfterCycle = await page.evaluate(() => ({
-      collapsedRows: document.querySelectorAll('li.js-tree-node.prix-tree-collapsed').length,
-      hiddenRows: document.querySelectorAll('li.js-tree-node.prix-tree-hidden').length,
-    }));
+    // Tree rows follow the cycled category's final state (= its initial state)
+    const finalState = states[2]?.chipState;
+    const treeAfterCycle = await page.evaluate(category => {
+      let matched = 0;
+      let collapsed = 0;
+      let hidden = 0;
+      for (const row of document.querySelectorAll('li.js-tree-node')) {
+        const href = row.querySelector('a[href^="#diff-"]')?.getAttribute('href');
+        const container = href ? document.getElementById(href.slice(1)) : null;
+        if (container?.querySelector('.prix-badge')?.textContent !== category) {
+          continue;
+        }
+
+        matched++;
+        if (row.classList.contains('prix-tree-collapsed')) collapsed++;
+        if (row.classList.contains('prix-tree-hidden')) hidden++;
+      }
+
+      return {matched, collapsed, hidden};
+    }, target);
+    const treeMatches =
+      treeAfterCycle.matched > 0 &&
+      (finalState === 'collapsed'
+        ? treeAfterCycle.collapsed === treeAfterCycle.matched
+        : finalState === 'hidden'
+          ? treeAfterCycle.hidden === treeAfterCycle.matched
+          : treeAfterCycle.collapsed === 0 && treeAfterCycle.hidden === 0);
     check(
       'tree rows track category state after cycle',
-      treeAfterCycle.collapsedRows > 0 && treeAfterCycle.hiddenRows === 0,
-      JSON.stringify(treeAfterCycle),
+      treeMatches,
+      JSON.stringify({finalState, ...treeAfterCycle}),
     );
     await shot(page, '04-chip-cycled.png');
   } else {
