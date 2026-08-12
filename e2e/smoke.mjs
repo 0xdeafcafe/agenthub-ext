@@ -548,6 +548,20 @@ try {
   );
   await shot(page, '07-langwatch-chart.png');
 
+  // ── 9b. Cache: a revisit shows the full picture immediately ─────────────
+  console.log('\n== PR counts cache ==');
+  await page.goto('https://github.com/react/react/pulls', {waitUntil: 'domcontentloaded'});
+  await page.goto(`https://github.com${prPath}/files`, {waitUntil: 'domcontentloaded'});
+  await page.waitForSelector('#prix-bar', {timeout: 15_000});
+  const revisitTotals = await page.evaluate(
+    () => document.querySelector('#prix-bar .prix-totals')?.textContent?.trim() ?? null,
+  );
+  check(
+    'revisit shows full counts on first paint (cache seed)',
+    revisitTotals === classic.totals,
+    `first=${classic.totals} revisit=${revisitTotals}`,
+  );
+
   // ── 10. Kill switch ──────────────────────────────────────────────────────
   console.log('\n== Kill switch ==');
   await page.evaluate(() => localStorage.setItem('prix-disabled', '1'));

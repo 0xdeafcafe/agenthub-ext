@@ -94,3 +94,34 @@ describe('ImpactBar markup', () => {
     expect(chip.getAttribute('aria-label')).toBe('tests, 100%, hidden - click to show');
   });
 });
+
+describe('findBarPlacement above the React PR page', () => {
+  it('lands at the top of the files region when a block ancestor exists there', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="page" style="display: flex">
+          <div id="header"><a href="/o/r/pull/1/commits">Commits</a></div>
+          <div id="region">
+            <div id="row" style="display: flex"><div id="diff-a"></div></div>
+          </div>
+        </div>
+      </main>`;
+    const placement = findBarPlacement(document.querySelector('#diff-a')!)!;
+    expect(placement.parent).toBe(document.querySelector('#region'));
+    expect(placement.before).toBe(document.querySelector('#row'));
+  });
+
+  it('refuses to climb above the PR header when everything below is flex', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="page">
+          <div id="header"><a href="/o/r/pull/1/commits">Commits</a></div>
+          <div id="row" style="display: flex">
+            <div id="viewer" style="display: flex"><div id="diff-a"></div></div>
+          </div>
+        </div>
+      </main>`;
+    // #page is block but holds the PR header - too far. Null, not a full-bleed bar.
+    expect(findBarPlacement(document.querySelector('#diff-a')!)).toBeNull();
+  });
+});

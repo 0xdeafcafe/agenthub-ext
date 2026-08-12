@@ -58,29 +58,42 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
   return button;
 }
 
+/** Matches the PR header's tab row (Conversation / Commits / Files changed). */
+const PR_HEADER_PROBE = 'a[href$="/commits"]';
+
 /**
  * Where to mount the bar, given the element it should sit in front of.
  * Never returns a flex/grid parent: inserting into GitHub's row layout
  * makes the bar a layout column of its own (seen live on the React files
  * view - bar column, then tree, then diff, with dead space under the bar).
- * Walks up to the nearest block-flow ancestor and places the bar in front of
- * the whole row instead. Null when nothing block-level is found nearby;
- * better no bar than a mangled page.
+ * And never climbs above the files region: on one React page variant every
+ * ancestor up past the PR header was flex, and the bar landed full-bleed
+ * above the PR title. The climb stops at any ancestor that also holds the
+ * PR header tab row; if nothing block-flow was found below that point we
+ * return null - better no bar than a mangled page.
  */
 export function findBarPlacement(anchor: Element): {parent: Element; before: Element | null} | null {
   let child: Element = anchor;
   let parent = anchor.parentElement;
+  let deepestBlock: {parent: Element; before: Element | null} | null = null;
   for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+    if (parent.querySelector(PR_HEADER_PROBE)) {
+      // This ancestor holds the PR header as well as the files UI - above
+      // the region the bar belongs to.
+      return deepestBlock;
+    }
+
     const {display} = getComputedStyle(parent);
     if (!display.includes('flex') && !display.includes('grid')) {
-      return {parent, before: child};
+      deepestBlock ??= {parent, before: child};
+      return deepestBlock;
     }
 
     child = parent;
     parent = parent.parentElement;
   }
 
-  return null;
+  return deepestBlock;
 }
 
 /**

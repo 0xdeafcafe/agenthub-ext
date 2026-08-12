@@ -1,7 +1,9 @@
 /* PR Impact - all classes prefixed prix-, colours via Primer CSS variables only */
 
 .prix-bar {
-  margin: 0 0 20px;
+  /* Margins (not padding) keep the bar aligned with the content gutter
+     whichever parent the placement walk lands in */
+  margin: 16px 16px 20px;
   padding: 16px 20px;
   background: var(--bgColor-default, #ffffff);
   border: 1px solid var(--borderColor-default, #d1d9e0);

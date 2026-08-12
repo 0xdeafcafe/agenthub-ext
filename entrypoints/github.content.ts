@@ -7,6 +7,7 @@ import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact
 import {injectBadge} from '../lib/badges';
 import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
 import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
+import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, readPrCounts, writePrCounts} from '../lib/pr-cache';
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {defaultStateFor, CategoryStateStore, type DisplayState} from '../lib/state';
@@ -34,18 +35,43 @@ function oneEvent(target: EventTarget, events: string[]): Promise<true> {
 }
 
 /**
+ * The files toolbar, found as defensively as we can: the module-class
+ * section, then anything with the toolbar class fragment, then by content
+ * (the "N / M viewed" counter lives in it, as does Submit review).
+ */
+function findFilesToolbar(): Element | null {
+  const byClass =
+    document.querySelector('section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar') ??
+    document.querySelector('[class*="PullRequestFilesToolbar"]');
+  if (byClass) {
+    return byClass;
+  }
+
+  for (const element of document.querySelectorAll('span, div, button')) {
+    if (element.children.length > 0) {
+      continue;
+    }
+
+    if (/\d[\d,]*\s*\/\s*\d[\d,]*\s*viewed/.test(element.textContent ?? '') || element.textContent?.trim() === 'Submit review') {
+      return element.closest('section, [class*="oolbar"]') ?? element.parentElement;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Anchor for the impact bar: after the files toolbar, else before the first
- * file container - but always into a block-flow parent (findBarPlacement),
- * so the bar can never become a column in GitHub's flex/grid row layout.
+ * file container - but always into a block-flow parent inside the files
+ * region (findBarPlacement), so the bar can never become a column in
+ * GitHub's flex/grid row layout or jump above the PR header.
  */
 function insertBar(bar: ImpactBar): void {
   if (document.getElementById('prix-bar')) {
     return;
   }
 
-  const toolbar = document.querySelector(
-    'section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar',
-  );
+  const toolbar = findFilesToolbar();
   const anchor = toolbar?.nextElementSibling ?? document.querySelector(containerSelector);
   const placement = anchor
     ? findBarPlacement(anchor)
@@ -172,12 +198,24 @@ async function init(signal: AbortSignal): Promise<void> {
   const stateOf = (category: string): DisplayState =>
     store.get(category, defaultStateFor(category, rules, config.defaultView));
 
+  // Per-PR aggregate cache: seed the bar's display from the last visit
+  // (same head SHA, or no SHA to compare against) so a virtualised PR
+  // doesn't start at 0 and grow as you scroll. Live counts take over once
+  // they cover at least as many files; the two are never summed.
+  const cacheKey = prCacheKey(owner, repo, prNumber);
+  const pageSha = extractHeadSha(document);
+  const cacheEntry = await readPrCounts(cacheKey);
+  const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha) ? cacheEntry : null;
+  if (signal.aborted) {
+    return;
+  }
+
   const counts = new Map<string, CategoryCount>();
   const processed: Array<{container: Element; category: string; viewed: boolean}> = [];
   const processedById = new Map<string, {container: Element; category: string}>();
   const treeRows = new Map<Element, string>(); // row → container id
   const pendingTreeRows = new Map<string, Element[]>(); // container id → rows seen before their file mounted
-  let impactMap: ImpactMap | null = null;
+  let impactMap: ImpactMap | null = seed?.impactMap ?? null;
 
   const jump = (direction: 1 | -1): void => {
     const jumpable = new Set(
@@ -257,8 +295,47 @@ async function init(signal: AbortSignal): Promise<void> {
     },
     onJump: jump,
   });
+  if (seed?.impactMap) {
+    bar.setImpactMap(seed.impactMap); // instant on revisit; the live fetch still wins when it lands
+  }
+
+  // The best-known picture: cached until live catches up. Persisting this
+  // (rather than raw live counts) means a half-mounted virtualised revisit
+  // can never degrade the cache.
+  const bestCounts = (): Record<string, CategoryCount> =>
+    displayCounts(seed?.counts ?? null, Object.fromEntries(counts));
+
+  let lastPersist = 0;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+  const persist = (): void => {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+
+    const best = bestCounts();
+    if (Object.keys(best).length === 0) {
+      return; // never overwrite a good cache with nothing
+    }
+
+    lastPersist = Date.now();
+    void writePrCounts(cacheKey, {sha: pageSha, counts: best, impactMap, ts: lastPersist});
+  };
+  const schedulePersist = (): void => {
+    const wait = 2000 - (Date.now() - lastPersist);
+    if (wait <= 0) {
+      persist();
+      return;
+    }
+
+    persistTimer ??= setTimeout(persist, wait);
+  };
+  window.addEventListener('pagehide', persist, {signal});
+  document.addEventListener('turbo:before-fetch-request', persist, {signal});
+
   const refreshBar = rafThrottled(() => {
-    bar.update(counts, stateOf);
+    bar.update(new Map(Object.entries(bestCounts())), stateOf);
+    schedulePersist();
   });
 
   // Language "PR Impact Map" from the conversation page, when the bot posted one
