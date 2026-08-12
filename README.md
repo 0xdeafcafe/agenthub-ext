@@ -6,7 +6,7 @@ Reviewing a PR on GitHub means finding the five lines that matter buried under 2
 
 ## Downloads
 
-Latest release builds. The repo is **private**, so these links only work when you're logged into GitHub with access (yes, even the zips - GitHub auth-walls those too).
+These links always point at the current build - they track a rolling release called `rolling`, deleted and recreated on every push to `main`, so you're never waiting on a version tag. (When a real version tag does get cut, its release takes over the `latest` slot until the next main push. Both link shapes keep working throughout.) The repo is **private**, so the links only work when you're logged into GitHub with access - yes, even the zips, GitHub auth-walls those too.
 
 - **Chrome / Edge / Brave** - [pr-impact-chrome-mv3.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-chrome-mv3.zip): unzip, then `chrome://extensions` → Developer mode → Load unpacked → select the unzipped folder.
 - **Arc** - the *same* [pr-impact-chrome-mv3.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-chrome-mv3.zip), at `arc://extensions`. Same steps.
@@ -21,13 +21,13 @@ Open a PR's files page and PR Impact:
 
 - Parses every file in the diff as it mounts. Files mount lazily on scroll, so this runs off a MutationObserver, not a one-shot query (learned that the fun way).
 - Classifies each file by glob rules. Built in: `tests`, `docs`, `generated` (lockfiles included). Everything else is `code`. Repos can define their own categories (`server`, `sdk`, whatever) via a config file - see below.
-- Renders an **impact bar** at the top: a slim stacked bar with one segment per category, sized by share of changed lines, and a legend of chips reading `3 files · 35 lines · 22%`. Clicking a chip cycles that category through **visible → collapsed → hidden → visible**. Collapsed keeps the file header, bins the diff body. Hidden bins the whole file. State persists per category in `chrome.storage.local` and beats the config defaults on your next visit.
+- Renders an **impact bar** at the top: a slim stacked bar with one segment per category, sized by share of changed lines, and a legend of chips (`tests`, `22%`) with the file and line counts in the tooltip. Clicking a chip cycles that category through **visible → collapsed → hidden → visible**. Collapsed keeps the file header, bins the diff body. Hidden bins the whole file. State persists per category in `chrome.storage.local` and beats the config defaults on your next visit.
 - Bar controls on the right: totals (`9 files · 185 lines · 2 reviewed`), jump to previous/next visible file (or `Shift+K` / `Shift+J`), expand-all, collapse-all, and a **copy impact report** button that drops a markdown table on your clipboard.
 - Adds a dimmed category badge (`tests` and friends) to each file header, and dims the matching rows in GitHub's file tree - 35% opacity plus the badge for hidden files, a lighter touch for collapsed ones.
 - Counts GitHub's viewed state: `n of m reviewed` per category in the chip tooltips, and a reviewed total in the bar. Logged in only, since GitHub doesn't render the viewed toggle logged out.
 - If the PR has a Language **PR Impact Map** bot comment (their per-category percentages), the breakdown shows under the bar and the copied report uses their numbers instead of ours.
 
-There's also a **My PRs** tab in the repo nav, right after Pull requests. It links to your open PRs (`author:@me`, so no username faff) with an accent-coloured counter. The counter needs you logged in; logged out it stays politely empty.
+There's also a pair of extra tabs in the repo nav, right after Pull requests: **My PRs** (your open PRs in this repo, `author:<you>`) and **Review requested** (open PRs waiting on your review). Both get a live count - accent-filled for My PRs so it reads as yours at a glance, GitHub's default grey for Review requested so the two don't compete. The counts need you logged in; logged out they stay politely empty.
 
 ## The kill switch
 

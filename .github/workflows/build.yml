@@ -130,5 +130,45 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" release-assets/* --clobber
           else
-            gh release create "$TAG" release-assets/* --generate-notes
+            gh release create "$TAG" release-assets/* --generate-notes --latest
           fi
+
+  # Rolling release: the README's releases/latest/download/... links 404
+  # unless some full release is marked latest, and tags don't happen often.
+  # So every main push republishes a `rolling` release with the same stable
+  # asset names. A versioned tag release takes over "latest" when it lands;
+  # the next main push re-marks rolling - both link shapes keep working.
+  rolling-release:
+    if: github.ref == 'refs/heads/main'
+    needs: [chrome, firefox, safari]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-chrome-arc
+          path: dist/chrome
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-firefox
+          path: dist/firefox
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-impact-safari-xcode-project
+          path: dist/safari
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp dist/chrome/agenthubext-*-chrome.zip release-assets/pr-impact-chrome-mv3.zip
+          cp dist/firefox/agenthubext-*-firefox.zip release-assets/pr-impact-firefox-mv2.zip
+          cp dist/safari/pr-impact-safari-xcode.zip release-assets/pr-impact-safari-xcode.zip
+          ls -la release-assets
+      - name: Republish the rolling release
+        run: |
+          gh release delete rolling --yes --cleanup-tag || true
+          gh release create rolling release-assets/* \
+            --target main \
+            --title "Latest main build" \
+            --notes "Rolling build of main at ${GITHUB_SHA::7}, rebuilt on every push. For Arc/Chrome/Edge/Brave use pr-impact-chrome-mv3.zip." \
+            --latest

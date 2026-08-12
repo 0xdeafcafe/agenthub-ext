@@ -17,6 +17,8 @@ export interface TabDefinition {
   atMePath: string;
   /** Accent-filled counter ("yours") vs GitHub's default grey. */
   accentCounter: boolean;
+  /** Counter tooltip, given the count. */
+  counterTitle: (count: number) => string;
 }
 
 export const PULL_TABS: TabDefinition[] = [
@@ -26,6 +28,7 @@ export const PULL_TABS: TabDefinition[] = [
     qualifier: 'author',
     atMePath: 'pulls/@me',
     accentCounter: true,
+    counterTitle: count => `${count} open PR${count === 1 ? '' : 's'} by you`,
   },
   {
     id: 'review-requested-repo-tab',
@@ -33,6 +36,7 @@ export const PULL_TABS: TabDefinition[] = [
     qualifier: 'review-requested',
     atMePath: 'pulls/review-requested/@me',
     accentCounter: false,
+    counterTitle: count => `${count} open PR${count === 1 ? '' : 's'} awaiting your review`,
   },
 ];
 
@@ -287,12 +291,12 @@ function applySelected(tab: Element, selected: boolean): void {
  * when the text actually changed. The node is never swapped or removed, so
  * the counter can never cause a layout shift (geometry is reserved in CSS).
  */
-function renderCount(tab: Element, count: number): void {
+function renderCount(tab: Element, count: number, title: string): void {
   const counter = tab.querySelector<HTMLElement>('.prix-tab-counter');
   const text = String(count);
   if (counter && counter.textContent !== text) {
     counter.textContent = text;
-    counter.title = `${count} open PR${count === 1 ? '' : 's'}`;
+    counter.title = title;
   }
 }
 
@@ -370,7 +374,7 @@ function ensureTab(
 
     const cached = countsCache?.[countKey(owner, repo, def)];
     if (cached) {
-      renderCount(link, cached.count);
+      renderCount(link, cached.count, def.counterTitle(cached.count));
     }
   } else {
     // Invariant repairs on an existing tab, each convergent (no write when correct):
@@ -400,7 +404,7 @@ function ensureTab(
 
           const tab = document.getElementById(def.id);
           if (tab) {
-            renderCount(tab, count);
+            renderCount(tab, count, def.counterTitle(count));
           }
         } catch (error) {
           console.error('[PR Impact]', 'pulls-count', error);
