@@ -20,10 +20,10 @@ Every push to `main` also publishes these as workflow artefacts on the [Actions 
 Open a PR's files page and PR Impact:
 
 - Parses every file in the diff as it mounts. Files mount lazily on scroll, so this runs off a MutationObserver, not a one-shot query (learned that the fun way).
-- Classifies each file by glob rules. Built in: `tests`, `docs`, `generated` (lockfiles included). Everything else is `code`. Repos can define their own categories (`server`, `sdk`, whatever) via a config file - see below.
+- Classifies each file by glob rules. Built in: `tests` (Go-style `foo_test.go` included), `specs` (`.feature` files), `docs`, `generated` (lockfiles included). Everything else is `code`. Repos can define their own categories (`server`, `sdk`, whatever) via a config file - see below.
 - Renders an **impact bar** at the top: a slim stacked bar with one segment per category, sized by share of changed lines, and a legend of chips (`tests`, `22%`) with the file and line counts in the tooltip. Clicking a chip cycles that category through **visible → collapsed → hidden → visible**. Collapsed keeps the file header, bins the diff body. Hidden bins the whole file. State persists per category in `chrome.storage.local` and beats the config defaults on your next visit.
 - Bar controls on the right: totals (`9 files · 185 lines · 2 reviewed`), jump to previous/next visible file (or `Shift+K` / `Shift+J`), expand-all, collapse-all, and a **copy impact report** button that drops a markdown table on your clipboard.
-- Adds a dimmed category badge (`tests` and friends) to each file header, and dims the matching rows in GitHub's file tree - 35% opacity plus the badge for hidden files, a lighter touch for collapsed ones.
+- Adds a dimmed category badge (`tests` and friends) to each file header, and dims the matching rows in GitHub's file tree - 35% opacity plus the badge for hidden files, a lighter touch for collapsed ones. A folder whose contents are entirely faded gets faded itself, and its disclosure closed once (re-open it by hand and it stays open - your call beats ours).
 - Counts GitHub's viewed state: `n of m reviewed` per category in the chip tooltips, and a reviewed total in the bar. Logged in only, since GitHub doesn't render the viewed toggle logged out.
 - If the PR has a Language **PR Impact Map** bot comment (their per-category percentages), the breakdown shows under the bar and the copied report uses their numbers instead of ours.
 
@@ -60,8 +60,11 @@ Drop `.github/pr-impact.yml` in a repo to customise the categories. It's fetched
 defaultView: [code]         # categories that start expanded; everything else starts hidden
 categories:
   tests:
-    globs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/test/**", "**/tests/**"]
+    globs: ["**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/__tests__/**", "**/test/**", "**/tests/**"]
     action: collapse        # visible | collapse | hide
+  specs:
+    globs: ["**/*.feature"]
+    action: collapse
   docs:
     globs: ["**/*.md", "**/*.mdx", "docs/**"]
     action: hide
@@ -73,7 +76,7 @@ categories:
     action: visible
 ```
 
-- `defaultView` is optional. When set, listed categories start expanded and every other category starts hidden (as in, gone, zero scroll space). When it's absent, each category's `action` sets its starting state - and the built-in defaults already amount to code-only reading: `tests` → collapse, `docs` → hide, `generated` → hide (that last one includes `**/package-lock.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/go.sum` and `**/Cargo.lock`).
+- `defaultView` is optional. When set, listed categories start expanded and every other category starts hidden (as in, gone, zero scroll space). When it's absent, each category's `action` sets its starting state - and the built-in defaults already amount to code-only reading: `tests` → collapse (Go-style `foo_test.go` included), `specs` → collapse (`**/*.feature`), `docs` → hide, `generated` → hide (that last one includes `**/package-lock.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/go.sum` and `**/Cargo.lock`).
 - First matching rule wins. Unmatched files land in the implicit `code` category, always listed last in the bar.
 - Unknown actions and keys are ignored.
 

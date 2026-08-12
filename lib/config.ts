@@ -4,7 +4,13 @@ import type {CategoryAction, CategoryRule} from './classifier';
 export const DEFAULT_CATEGORIES: CategoryRule[] = [
   {
     name: 'tests',
-    globs: ['**/*.test.*', '**/*.spec.*', '**/__tests__/**', '**/test/**', '**/tests/**'],
+    globs: ['**/*.test.*', '**/*.spec.*', '**/*_test.*', '**/__tests__/**', '**/test/**', '**/tests/**'],
+    action: 'collapse',
+  },
+  {
+    // Gherkin specs - not tests as far as CI is concerned, but never code either
+    name: 'specs',
+    globs: ['**/*.feature'],
     action: 'collapse',
   },
   {

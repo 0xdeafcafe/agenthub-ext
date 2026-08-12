@@ -5,7 +5,18 @@ import {fetchConfig} from '../lib/config';
 import {findBarPlacement, ImpactBar, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
-import {applyTreeRowState, TREE_ROW_SELECTOR, treeRowContainerId} from '../lib/file-tree';
+import {
+  aggregateFolderState,
+  applyFolderState,
+  applyTreeRowState,
+  folderFileStates,
+  folderKey,
+  isFolderRow,
+  maybeAutoCollapseFolder,
+  TREE_ROW_SELECTOR,
+  treeRowContainerId,
+  treeRowPath,
+} from '../lib/file-tree';
 import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
 import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, readPrCounts, writePrCounts} from '../lib/pr-cache';
 import {observeSelector} from '../lib/observer';
@@ -213,8 +224,7 @@ async function init(signal: AbortSignal): Promise<void> {
   const counts = new Map<string, CategoryCount>();
   const processed: Array<{container: Element; category: string; viewed: boolean}> = [];
   const processedById = new Map<string, {container: Element; category: string}>();
-  const treeRows = new Map<Element, string>(); // row → container id
-  const pendingTreeRows = new Map<string, Element[]>(); // container id → rows seen before their file mounted
+  const treeFileRows = new Set<Element>(); // every file row seen this page
   let impactMap: ImpactMap | null = seed?.impactMap ?? null;
 
   const jump = (direction: 1 | -1): void => {
@@ -352,6 +362,67 @@ async function init(signal: AbortSignal): Promise<void> {
       logError('impact-map', error);
     });
 
+  // Tree rows classify by their full path when the tree carries one (works
+  // from first paint, even for files the diff hasn't mounted); the
+  // container-anchor match is the fallback, and unknown rows stay normal.
+  const stateOfTreeRow = (row: Element): DisplayState | null => {
+    const path = treeRowPath(row);
+    if (path) {
+      return stateOf(classify(path, rules));
+    }
+
+    const id = treeRowContainerId(row);
+    const entry = id ? processedById.get(id) : undefined;
+    return entry ? stateOf(entry.category) : null;
+  };
+
+  const applyTreeRow = (row: Element): void => {
+    const path = treeRowPath(row);
+    const category = path
+      ? classify(path, rules)
+      : processedById.get(treeRowContainerId(row) ?? '')?.category;
+    if (!category) {
+      return;
+    }
+
+    applyTreeRowState(row, category, stateOf(category));
+  };
+
+  // Folder rollup: a folder whose classified descendant files are all faded
+  // gets faded too, and its disclosure closed once per folder per page (the
+  // fade itself re-applies freely). Unknown files count as visible.
+  const userToggledFolders = new Set<string>();
+  const autoCollapsedFolders = new Set<string>();
+  const recomputeFolderStates = rafThrottled(() => {
+    for (const row of document.querySelectorAll(TREE_ROW_SELECTOR)) {
+      if (!isFolderRow(row)) {
+        continue;
+      }
+
+      const state = aggregateFolderState(folderFileStates(row, stateOfTreeRow));
+      applyFolderState(row, state);
+      maybeAutoCollapseFolder(row, state, userToggledFolders, autoCollapsedFolders);
+    }
+  });
+
+  // A folder the user has opened or closed by hand is never auto-collapsed
+  document.addEventListener(
+    'click',
+    guarded('folder-toggle', (event: MouseEvent) => {
+      const control = (event.target as Element).closest?.('[aria-expanded]');
+      const row = control?.closest(TREE_ROW_SELECTOR);
+      if (!control || !row) {
+        return;
+      }
+
+      const key = folderKey(row);
+      if (key) {
+        userToggledFolders.add(key);
+      }
+    }),
+    {signal},
+  );
+
   store.subscribe(category => {
     const state = stateOf(category);
     for (const entry of processed) {
@@ -360,13 +431,11 @@ async function init(signal: AbortSignal): Promise<void> {
       }
     }
 
-    for (const [row, containerId] of treeRows) {
-      const entry = processedById.get(containerId);
-      if (entry?.category === category) {
-        applyTreeRowState(row, category, state);
-      }
+    for (const row of treeFileRows) {
+      applyTreeRow(row);
     }
 
+    recomputeFolderStates();
     refreshBar();
   });
 
@@ -462,12 +531,16 @@ async function init(signal: AbortSignal): Promise<void> {
     processed.push({container, category, viewed});
     if (container.id) {
       processedById.set(container.id, {container, category});
-      for (const row of pendingTreeRows.get(container.id) ?? []) {
-        treeRows.set(row, container.id);
-        applyTreeRowState(row, category, stateOf(category));
+      // A tree row seen before its file mounted gets classified now
+      const row =
+        document.getElementById(`file-tree-item-${container.id}`) ??
+        [...treeFileRows].find(candidate => treeRowContainerId(candidate) === container.id);
+      if (row) {
+        treeFileRows.add(row);
+        applyTreeRow(row);
       }
 
-      pendingTreeRows.delete(container.id);
+      recomputeFolderStates();
     }
 
     applyState(container, stateOf(category));
@@ -477,21 +550,14 @@ async function init(signal: AbortSignal): Promise<void> {
   }, signal);
 
   observeSelector(TREE_ROW_SELECTOR, row => {
-    const id = treeRowContainerId(row);
-    if (!id) {
+    if (isFolderRow(row)) {
+      recomputeFolderStates();
       return;
     }
 
-    const entry = processedById.get(id);
-    if (entry) {
-      treeRows.set(row, id);
-      applyTreeRowState(row, entry.category, stateOf(entry.category));
-    } else {
-      // Tree renders before lazily-mounted files; flush when the file mounts
-      const pending = pendingTreeRows.get(id) ?? [];
-      pending.push(row);
-      pendingTreeRows.set(id, pending);
-    }
+    treeFileRows.add(row);
+    applyTreeRow(row);
+    recomputeFolderStates();
   }, signal);
 
   // React can re-render a file header (e.g. after the viewed toggle), wiping

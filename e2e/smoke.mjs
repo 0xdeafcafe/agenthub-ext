@@ -362,6 +362,20 @@ try {
     () => document.querySelectorAll('li.js-tree-node.prix-tree-collapsed').length,
   );
   check('collapsed categories dim tree rows', treeCollapsed > 0, `collapsedRows=${treeCollapsed}`);
+  const folderDim = await page.evaluate(() => {
+    const folders = [...document.querySelectorAll('li.js-tree-node[data-tree-entry-type="directory"]')];
+    return {
+      folders: folders.length,
+      dimmed: folders.filter(f => f.classList.contains('prix-tree-collapsed')).length,
+      closed: folders.filter(
+        f => f.querySelector(':scope > [aria-expanded]')?.getAttribute('aria-expanded') === 'false',
+      ).length,
+      badgedFolders: folders.filter(f => f.querySelector('.prix-tree-badge')).length,
+    };
+  });
+  check('fully-faded folders dim too', folderDim.folders > 0 && folderDim.dimmed > 0, JSON.stringify(folderDim));
+  check('faded folders auto-collapse their disclosure', folderDim.closed > 0, `closed=${folderDim.closed}`);
+  check('folders never get badges', folderDim.badgedFolders === 0);
   await page.click('#prix-bar .prix-control[aria-label="Expand all categories"]');
   await page.waitForTimeout(400);
   const treeRestored = await page.evaluate(

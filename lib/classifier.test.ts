@@ -11,6 +11,13 @@ describe('classify with default rules', () => {
     expect(classify('packages/app/__tests__/index.js', rules)).toBe('tests');
     expect(classify('pkg/util/tests/test_helper.py', rules)).toBe('tests');
     expect(classify('foo.test.ts', rules)).toBe('tests');
+    expect(classify('pkg/util/foo_test.go', rules)).toBe('tests');
+    expect(classify('src/parser_test.ts', rules)).toBe('tests');
+  });
+
+  it('classifies Gherkin specs separately from tests and code', () => {
+    expect(classify('e2e/login.feature', rules)).toBe('specs');
+    expect(classify('features/checkout/coupon.feature', rules)).toBe('specs');
   });
 
   it('classifies docs', () => {
