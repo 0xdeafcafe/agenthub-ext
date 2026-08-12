@@ -150,7 +150,39 @@ describe('spanningBarPlacement', () => {
     expect(bar.style.flex).toBe('0 0 100%');
   });
 
-  it('refuses a nowrap flex row - the bar would squeeze its siblings', () => {
+  it('climbs out of a nowrap flex row into a spannable ancestor', () => {
+    // Live on the React files view (langwatch#6894): file containers sit
+    // under nowrap flex rows, with a grid layout further up
+    document.body.innerHTML = `
+      <main>
+        <div id="grid" style="display: grid">
+          <div id="row" style="display: flex; flex-wrap: nowrap">
+            <div id="viewer" style="display: flex; flex-wrap: nowrap"><div id="diff-a"></div></div>
+          </div>
+        </div>
+      </main>`;
+    const bar = document.createElement('div');
+    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, bar)!;
+    expect(placement.parent).toBe(document.querySelector('#grid'));
+    expect(placement.before).toBe(document.querySelector('#row'));
+    expect(bar.style.gridColumn).toBe('1 / -1');
+  });
+
+  it('takes a full row of a wrapping flex ancestor above nowrap levels', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="row" style="display: flex; flex-wrap: wrap">
+          <div id="inner" style="display: flex; flex-wrap: nowrap"><div id="diff-a"></div></div>
+        </div>
+      </main>`;
+    const bar = document.createElement('div');
+    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, bar)!;
+    expect(placement.parent).toBe(document.querySelector('#row'));
+    expect(placement.before).toBe(document.querySelector('#inner'));
+    expect(bar.style.flex).toBe('0 0 100%');
+  });
+
+  it('refuses when nowrap flex is all there is below <main>', () => {
     document.body.innerHTML = `
       <main>
         <div style="display: flex; flex-wrap: nowrap"><div id="diff-a"></div></div>

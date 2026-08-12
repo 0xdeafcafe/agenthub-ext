@@ -4,10 +4,13 @@
  * dead feature loop can leave the page half-augmented. Every entry point
  * (init, observer callback, event listener, async continuation) goes through
  * `guarded`, so one feature failing never takes the others down.
+ *
+ * Everything here is a handled failure, so it logs with console.warn, never
+ * console.error: Arc and Chrome put content-script console.error output on
+ * the extension's Errors page, where a benign skip reads as a crash.
  */
-
 export function logError(context: string, error: unknown): void {
-  console.error('[PR Impact]', context, error);
+  console.warn('[PR Impact]', context, error);
 }
 
 export function guarded<A extends unknown[]>(context: string, fn: (...args: A) => void): (...args: A) => void {

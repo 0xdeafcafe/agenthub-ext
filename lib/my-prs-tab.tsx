@@ -120,7 +120,7 @@ export function preloadMyPrCounts(): Promise<CountCache> {
       return countsCache;
     })
     .catch(error => {
-      console.error('[PR Impact]', 'pulls-count-preload', error);
+      console.warn('[PR Impact]', 'pulls-count-preload', error);
       countsCache = {};
       return countsCache;
     });
@@ -304,7 +304,7 @@ export function ensureMyPrsTab(): void {
   try {
     ensureMyPrsTabUnsafe();
   } catch (error) {
-    console.error('[PR Impact]', 'pulls-tabs', error);
+    console.warn('[PR Impact]', 'pulls-tabs', error);
   }
 }
 
@@ -407,11 +407,11 @@ function ensureTab(
             renderCount(tab, count, def.counterTitle(count));
           }
         } catch (error) {
-          console.error('[PR Impact]', 'pulls-count', error);
+          console.warn('[PR Impact]', 'pulls-count', error);
         }
       })
       .catch(error => {
-        console.error('[PR Impact]', 'pulls-count', error);
+        console.warn('[PR Impact]', 'pulls-count', error);
       });
   }
 }

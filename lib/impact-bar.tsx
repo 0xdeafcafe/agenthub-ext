@@ -97,38 +97,47 @@ export function findBarPlacement(anchor: Element): {parent: Element; before: Ele
 }
 
 /**
- * Last resort when findBarPlacement finds nothing: the anchor's own parent,
- * which is inside the files region by definition. Only safe when the bar can
- * be made to span the layout instead of becoming a column - full track span
- * in grid, full-row basis in a wrapping flex row. A nowrap flex row would
- * squeeze its siblings to make room for us, so we still refuse there. Sets
- * the needed inline style on the bar element as a side effect.
+ * Last resort when findBarPlacement finds nothing block-flow: climb the same
+ * ancestor chain looking for a level the bar can span instead of becoming a
+ * column - full track span in grid, full-row basis in a wrapping flex row.
+ * A nowrap flex row would squeeze its siblings to make room for us, so we
+ * climb past it; a block parent needs no styling (findBarPlacement would
+ * have found it, but harmless to accept here). Same bounds as before: never
+ * above an ancestor that holds the PR header, never past <main>. Sets the
+ * needed inline style on the bar element as a side effect.
  */
 export function spanningBarPlacement(
   anchor: Element,
   barElement: HTMLElement,
 ): {parent: Element; before: Element | null} | null {
-  const parent = anchor.parentElement;
-  if (!parent || parent.tagName === 'MAIN' || parent === document.body || parent.querySelector(PR_HEADER_PROBE)) {
-    return null;
-  }
-
-  const {display, flexWrap} = getComputedStyle(parent);
-  if (display.includes('grid')) {
-    barElement.style.gridColumn = '1 / -1';
-    return {parent, before: anchor};
-  }
-
-  if (display.includes('flex')) {
-    if (flexWrap === 'nowrap') {
+  let child: Element = anchor;
+  let parent = anchor.parentElement;
+  for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+    if (parent.querySelector(PR_HEADER_PROBE)) {
       return null;
     }
 
-    barElement.style.flex = '0 0 100%';
-    return {parent, before: anchor};
+    const {display, flexWrap} = getComputedStyle(parent);
+    if (display.includes('grid')) {
+      barElement.style.gridColumn = '1 / -1';
+      return {parent, before: child};
+    }
+
+    if (display.includes('flex')) {
+      if (flexWrap !== 'nowrap') {
+        barElement.style.flex = '0 0 100%';
+        return {parent, before: child};
+      }
+      // Nowrap flex: a full-basis child would squeeze its siblings - climb.
+    } else {
+      return {parent, before: child};
+    }
+
+    child = parent;
+    parent = parent.parentElement;
   }
 
-  return {parent, before: anchor};
+  return null;
 }
 
 /**

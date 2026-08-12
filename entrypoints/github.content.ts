@@ -74,12 +74,12 @@ function findFilesToolbar(): Element | null {
 /**
  * Anchor for the impact bar: after the files toolbar, else before the first
  * file container - into a block-flow parent inside the files region
- * (findBarPlacement), or as a full-span child of the anchor's own parent
- * (spanningBarPlacement). The bar can never become a column in GitHub's
- * flex/grid row layout or jump above the PR header; when neither placement
- * is safe we skip the bar entirely - and warn, not error, because a page
- * shape we don't recognise is expected territory, not a crash (Arc puts
- * content-script console.error on the extension's Errors page).
+ * (findBarPlacement), or as a full-span child of the nearest grid/wrapping
+ * flex ancestor (spanningBarPlacement). The bar can never become a column in
+ * GitHub's flex/grid row layout or jump above the PR header; when neither
+ * placement is safe we skip the bar entirely - and warn, not error, because
+ * a page shape we don't recognise is expected territory, not a crash (Arc
+ * puts content-script console.error on the extension's Errors page).
  */
 let barPlacementWarned = false;
 

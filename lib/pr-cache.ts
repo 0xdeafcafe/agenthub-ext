@@ -92,12 +92,19 @@ export async function readPrCounts(key: string): Promise<PrCacheEntry | null> {
 }
 
 export async function writePrCounts(key: string, entry: PrCacheEntry): Promise<void> {
+  // After an extension reload the old page's content script is still alive
+  // but its storage handle is dead ("Extension context invalidated") - the
+  // debounced save firing on the way out is expected, so bail quietly.
+  if (!browser.runtime?.id) {
+    return;
+  }
+
   try {
     const stored = await browser.storage.local.get(STORAGE_KEY);
     const record = (stored[STORAGE_KEY] as Record<string, PrCacheEntry> | undefined) ?? {};
     record[key] = entry;
     await browser.storage.local.set({[STORAGE_KEY]: trimCache(record)});
   } catch (error) {
-    console.error('[PR Impact]', 'pr-counts-write', error);
+    console.warn('[PR Impact]', 'pr-counts-write', error);
   }
 }

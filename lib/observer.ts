@@ -26,14 +26,14 @@ export function observeSelector(
     try {
       callback(element);
     } catch (error) {
-      console.error('[PR Impact]', 'observer callback', error);
+      console.warn('[PR Impact]', 'observer callback', error);
     }
   };
 
   const scan = (root: ParentNode): void => {
     const matches = root.querySelectorAll(selector);
     if (matches.length > MAX_MATCHES) {
-      console.error('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes - refusing to process`);
+      console.warn('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes - refusing to process`);
       return;
     }
 
