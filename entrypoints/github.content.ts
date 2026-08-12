@@ -2,7 +2,7 @@ import './content.css';
 import {defineContentScript} from 'wxt/utils/define-content-script';
 import {classify, compileRules, type CompiledRule} from '../lib/classifier';
 import {fetchConfig} from '../lib/config';
-import {findBarPlacement, ImpactBar, type CategoryCount} from '../lib/impact-bar';
+import {findBarPlacement, ImpactBar, spanningBarPlacement, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
 import {
@@ -73,10 +73,16 @@ function findFilesToolbar(): Element | null {
 
 /**
  * Anchor for the impact bar: after the files toolbar, else before the first
- * file container - but always into a block-flow parent inside the files
- * region (findBarPlacement), so the bar can never become a column in
- * GitHub's flex/grid row layout or jump above the PR header.
+ * file container - into a block-flow parent inside the files region
+ * (findBarPlacement), or as a full-span child of the anchor's own parent
+ * (spanningBarPlacement). The bar can never become a column in GitHub's
+ * flex/grid row layout or jump above the PR header; when neither placement
+ * is safe we skip the bar entirely - and warn, not error, because a page
+ * shape we don't recognise is expected territory, not a crash (Arc puts
+ * content-script console.error on the extension's Errors page).
  */
+let barPlacementWarned = false;
+
 function insertBar(bar: ImpactBar): void {
   if (document.getElementById('prix-bar')) {
     return;
@@ -85,12 +91,16 @@ function insertBar(bar: ImpactBar): void {
   const toolbar = findFilesToolbar();
   const anchor = toolbar?.nextElementSibling ?? document.querySelector(containerSelector);
   const placement = anchor
-    ? findBarPlacement(anchor)
+    ? (findBarPlacement(anchor) ?? spanningBarPlacement(anchor, bar.element))
     : toolbar?.parentElement
       ? {parent: toolbar.parentElement, before: null}
       : null;
   if (!placement) {
-    logError('bar placement', 'no block-flow ancestor found - skipping bar insertion');
+    if (!barPlacementWarned) {
+      barPlacementWarned = true;
+      console.warn('[PR Impact]', 'bar placement: nowhere safe to mount the bar on this page - skipping');
+    }
+
     return;
   }
 
@@ -170,6 +180,9 @@ async function init(signal: AbortSignal): Promise<void> {
     console.info('[PR Impact] disabled via localStorage "prix-disabled" - see README');
     return;
   }
+
+  // Fresh page, fresh licence to warn once about bar placement
+  barPlacementWarned = false;
 
   // Start the storage read at document_start so a cached count is in memory
   // before the nav mounts - the tab's counter placeholder can then be filled

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {describe, expect, it} from 'vitest';
-import {findBarPlacement, ImpactBar} from './impact-bar';
+import {findBarPlacement, ImpactBar, spanningBarPlacement} from './impact-bar';
 
 describe('findBarPlacement', () => {
   it('places directly before the anchor in a block parent', () => {
@@ -123,5 +123,51 @@ describe('findBarPlacement above the React PR page', () => {
       </main>`;
     // #page is block but holds the PR header - too far. Null, not a full-bleed bar.
     expect(findBarPlacement(document.querySelector('#diff-a')!)).toBeNull();
+  });
+});
+
+describe('spanningBarPlacement', () => {
+  it('spans all tracks when the anchor parent is grid', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="grid" style="display: grid"><div id="diff-a"></div></div>
+      </main>`;
+    const bar = document.createElement('div');
+    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, bar)!;
+    expect(placement.parent).toBe(document.querySelector('#grid'));
+    expect(placement.before).toBe(document.querySelector('#diff-a'));
+    expect(bar.style.gridColumn).toBe('1 / -1');
+  });
+
+  it('takes a full row when the anchor parent is wrapping flex', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="row" style="display: flex; flex-wrap: wrap"><div id="diff-a"></div></div>
+      </main>`;
+    const bar = document.createElement('div');
+    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, bar)!;
+    expect(placement.parent).toBe(document.querySelector('#row'));
+    expect(bar.style.flex).toBe('0 0 100%');
+  });
+
+  it('refuses a nowrap flex row - the bar would squeeze its siblings', () => {
+    document.body.innerHTML = `
+      <main>
+        <div style="display: flex; flex-wrap: nowrap"><div id="diff-a"></div></div>
+      </main>`;
+    const bar = document.createElement('div');
+    expect(spanningBarPlacement(document.querySelector('#diff-a')!, bar)).toBeNull();
+    expect(bar.style.flex).toBe('');
+  });
+
+  it('refuses a parent that also holds the PR header', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="page">
+          <a href="/o/r/pull/1/commits">Commits</a>
+          <div id="diff-a"></div>
+        </div>
+      </main>`;
+    expect(spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div'))).toBeNull();
   });
 });
