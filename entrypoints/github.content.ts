@@ -2,7 +2,7 @@ import './content.css';
 import {defineContentScript} from 'wxt/utils/define-content-script';
 import {classify, compileRules, type CompiledRule} from '../lib/classifier';
 import {fetchConfig} from '../lib/config';
-import {findBarPlacement, ImpactBar, spanningBarPlacement, type CategoryCount} from '../lib/impact-bar';
+import {findBarPlacement, ImpactBar, PR_HEADER_PROBE, spanningBarPlacement, type CategoryCount} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
 import {
@@ -82,6 +82,34 @@ function findFilesToolbar(): Element | null {
  * puts content-script console.error on the extension's Errors page).
  */
 let barPlacementWarned = false;
+let pathExtractionWarned = false;
+
+/**
+ * Human-readable rendering of the anchor's ancestor chain, for the placement
+ * failure warning - tag, id, a snippet of class, computed display/flex-wrap,
+ * and whether the PR-header probe matches at that level. This is the data
+ * placement decisions are made from, so a failing page can be diagnosed from
+ * the console line alone.
+ */
+function describeAnchorChain(anchor: Element): string {
+  const parts: string[] = [];
+  let el: Element | null = anchor;
+  for (let hops = 0; el && hops < 9 && el !== document.body; hops++) {
+    const {display, flexWrap} = getComputedStyle(el);
+    const id = el.id ? `#${el.id}` : '';
+    const cls = (el.getAttribute('class') ?? '').trim().split(/\s+/).slice(0, 2).join('.');
+    const probe = hops > 0 && el.querySelector(PR_HEADER_PROBE) ? ' [HEADER-PROBE]' : '';
+    parts.push(`${el.tagName.toLowerCase()}${id}${cls ? `.${cls}` : ''} ${display}/${flexWrap}${probe}`);
+    el = el.parentElement;
+  }
+
+  return parts.join(' <- ');
+}
+
+/** First 200 chars of an element's markup - enough to spot GitHub DOM changes. */
+function markupSnippet(el: Element): string {
+  return el.outerHTML.slice(0, 200);
+}
 
 function insertBar(bar: ImpactBar): void {
   if (document.getElementById('prix-bar')) {
@@ -98,7 +126,11 @@ function insertBar(bar: ImpactBar): void {
   if (!placement) {
     if (!barPlacementWarned) {
       barPlacementWarned = true;
-      console.warn('[PR Impact]', 'bar placement: nowhere safe to mount the bar on this page - skipping');
+      console.warn(
+        '[PR Impact]',
+        'bar placement: nowhere safe to mount the bar on this page - skipping.',
+        anchor ? `anchor chain: ${describeAnchorChain(anchor)}` : 'no anchor found (no toolbar, no file container)',
+      );
     }
 
     return;
@@ -181,8 +213,9 @@ async function init(signal: AbortSignal): Promise<void> {
     return;
   }
 
-  // Fresh page, fresh licence to warn once about bar placement
+  // Fresh page, fresh licence to warn once about bar placement and paths
   barPlacementWarned = false;
+  pathExtractionWarned = false;
 
   // Start the storage read at document_start so a cached count is in memory
   // before the nav mounts - the tab's counter placeholder can then be filled
@@ -516,6 +549,18 @@ async function init(signal: AbortSignal): Promise<void> {
     const adapter = adapterFor(container);
     const path = adapter?.getPath(container);
     if (!adapter || !path) {
+      // A plausible container with no extractable path means GitHub changed
+      // the header markup - say so once, with enough markup to fix the
+      // selector, instead of silently doing nothing all page.
+      if (!pathExtractionWarned) {
+        pathExtractionWarned = true;
+        console.warn(
+          '[PR Impact]',
+          `no file path extractable from a ${adapter?.name ?? 'unrecognised'} container - GitHub may have changed the diff header markup.`,
+          `container: ${markupSnippet(container)}`,
+        );
+      }
+
       return;
     }
 

@@ -60,9 +60,20 @@ export class CategoryStateStore {
   #states = new Map<string, DisplayState>();
   #listeners = new Set<Listener>();
 
+  /**
+   * Storage failures (dead context after an extension reload, quota, ...) must
+   * not take init down with them - the feature works fine on default states.
+   */
   async load(): Promise<void> {
-    const stored = await browser.storage.local.get(STORAGE_KEY);
-    const value: unknown = stored[STORAGE_KEY];
+    let value: unknown;
+    try {
+      const stored = await browser.storage.local.get(STORAGE_KEY);
+      value = stored[STORAGE_KEY];
+    } catch (error) {
+      console.warn('[PR Impact]', 'category-states-load', error);
+      return;
+    }
+
     if (typeof value === 'object' && value !== null) {
       for (const [category, state] of Object.entries(value)) {
         if (isDisplayState(state)) {
@@ -84,7 +95,9 @@ export class CategoryStateStore {
 
   set(category: string, state: DisplayState): void {
     this.#states.set(category, state);
-    void browser.storage.local.set({[STORAGE_KEY]: Object.fromEntries(this.#states)});
+    browser.storage.local.set({[STORAGE_KEY]: Object.fromEntries(this.#states)}).catch(error => {
+      console.warn('[PR Impact]', 'category-states-write', error);
+    });
     for (const listener of this.#listeners) {
       listener(category, state);
     }

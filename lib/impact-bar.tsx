@@ -59,7 +59,7 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
 }
 
 /** Matches the PR header's tab row (Conversation / Commits / Files changed). */
-const PR_HEADER_PROBE = 'a[href$="/commits"]';
+export const PR_HEADER_PROBE = 'a[href$="/commits"]';
 
 /**
  * Where to mount the bar, given the element it should sit in front of.
