@@ -145,6 +145,8 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # gh release create --target resolves the ref through local git
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: pr-impact-chrome-arc
