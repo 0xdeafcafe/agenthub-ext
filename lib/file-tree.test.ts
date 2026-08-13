@@ -7,6 +7,7 @@ import {
   folderDisclosure,
   folderFileStates,
   folderKey,
+  folderStatesByPath,
   isFolderRow,
   maybeAutoCollapseFolder,
   treeRowPath,
@@ -93,9 +94,9 @@ describe('folder state application', () => {
 describe('maybeAutoCollapseFolder', () => {
   const makeCollapsible = (row: Element): void => {
     // Simulate GitHub's own disclosure behaviour
-    folderDisclosure(row)!.addEventListener('click', () => {
-      const control = folderDisclosure(row)!;
-      control.setAttribute('aria-expanded', control.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+    folderDisclosure(row)!.toggle.addEventListener('click', () => {
+      const holder = folderDisclosure(row)!.stateHolder;
+      holder.setAttribute('aria-expanded', holder.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
     });
   };
 
@@ -106,7 +107,7 @@ describe('maybeAutoCollapseFolder', () => {
     const autoCollapsed = new Set<string>();
 
     expect(maybeAutoCollapseFolder(docs, 'hidden', userToggled, autoCollapsed)).toBe(true);
-    expect(folderDisclosure(docs)!.getAttribute('aria-expanded')).toBe('false');
+    expect(folderDisclosure(docs)!.stateHolder.getAttribute('aria-expanded')).toBe('false');
 
     expect(maybeAutoCollapseFolder(docs, 'hidden', userToggled, autoCollapsed)).toBe(false);
   });
@@ -118,7 +119,7 @@ describe('maybeAutoCollapseFolder', () => {
     const userToggled = new Set<string>(['docs']);
 
     expect(maybeAutoCollapseFolder(docs, 'hidden', userToggled, autoCollapsed)).toBe(false);
-    expect(folderDisclosure(docs)!.getAttribute('aria-expanded')).toBe('true');
+    expect(folderDisclosure(docs)!.stateHolder.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('does nothing for visible folders or already-closed disclosures', () => {
@@ -127,8 +128,66 @@ describe('maybeAutoCollapseFolder', () => {
     const autoCollapsed = new Set<string>();
     expect(maybeAutoCollapseFolder(docs, 'visible', new Set(), autoCollapsed)).toBe(false);
 
-    folderDisclosure(docs)!.setAttribute('aria-expanded', 'false');
+    folderDisclosure(docs)!.stateHolder.setAttribute('aria-expanded', 'false');
     expect(maybeAutoCollapseFolder(docs, 'hidden', new Set(), autoCollapsed)).toBe(false);
     expect(autoCollapsed.size).toBe(0);
+  });
+});
+
+describe('react TreeView rows', () => {
+  beforeEach(() => {
+    // Modelled on the live React files view markup (probed from a
+    // langwatch/langwatch /changes page): flat-ish Primer TreeView, the
+    // row's id is the full path, aria-expanded lives on the folder row.
+    document.body.innerHTML = `
+      <ul role="tree">
+        <li role="treeitem" aria-level="1" aria-expanded="true" id="platform" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B">
+          <div class="PRIVATE_TreeView-item-content"><span class="PRIVATE_TreeView-item-label">platform</span></div>
+          <ul role="group">
+            <li role="treeitem" aria-level="2" id="platform/app/src/__tests__/foo.unit.test.ts" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B" aria-label="foo.unit.test.ts">
+              <div class="PRIVATE_TreeView-item-content"><a href="#diff-aaa111">foo.unit.test.ts</a></div>
+            </li>
+            <li role="treeitem" aria-level="2" id="platform/app/src/index.ts" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B" aria-label="index.ts">
+              <div class="PRIVATE_TreeView-item-content"><a href="#diff-bbb222">index.ts</a></div>
+            </li>
+          </ul>
+        </li>
+      </ul>`;
+  });
+
+  it('reads the full path from the row id', () => {
+    expect(treeRowPath(document.getElementById('platform/app/src/__tests__/foo.unit.test.ts')!)).toBe(
+      'platform/app/src/__tests__/foo.unit.test.ts',
+    );
+  });
+
+  it('tells folders from files via aria-expanded on the row', () => {
+    expect(isFolderRow(document.getElementById('platform')!)).toBe(true);
+    expect(isFolderRow(document.getElementById('platform/app/src/index.ts')!)).toBe(false);
+  });
+
+  it('uses the row id as the folder key', () => {
+    expect(folderKey(document.getElementById('platform')!)).toBe('platform');
+  });
+
+  it('rolls folder state up by path prefix, no DOM nesting required', () => {
+    const states = new Map<string, DisplayState>([
+      ['platform/app/src/__tests__/foo.unit.test.ts', 'collapsed'],
+      ['platform/app/src/index.ts', 'collapsed'],
+    ]);
+    expect(aggregateFolderState(folderStatesByPath('platform', states))).toBe('collapsed');
+    expect(folderStatesByPath('other', states)).toEqual([]);
+  });
+
+  it('auto-collapses by clicking the content child while reading state from the row', () => {
+    const folderRow = document.getElementById('platform')!;
+    folderDisclosure(folderRow)!.toggle.addEventListener('click', () => {
+      folderRow.setAttribute('aria-expanded', 'false');
+    });
+
+    const autoCollapsed = new Set<string>();
+    expect(maybeAutoCollapseFolder(folderRow, 'collapsed', new Set(), autoCollapsed)).toBe(true);
+    expect(folderRow.getAttribute('aria-expanded')).toBe('false');
+    expect(autoCollapsed.has('platform')).toBe(true);
   });
 });

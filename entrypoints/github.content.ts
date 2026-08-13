@@ -11,6 +11,7 @@ import {
   applyTreeRowState,
   folderFileStates,
   folderKey,
+  folderStatesByPath,
   isFolderRow,
   maybeAutoCollapseFolder,
   TREE_ROW_SELECTOR,
@@ -431,21 +432,34 @@ async function init(signal: AbortSignal): Promise<void> {
       return;
     }
 
-    applyTreeRowState(row, category, stateOf(category));
+    const state = stateOf(category);
+    if (path) {
+      fileRowStates.set(path, state);
+    }
+
+    applyTreeRowState(row, category, state);
   };
 
   // Folder rollup: a folder whose classified descendant files are all faded
   // gets faded too, and its disclosure closed once per folder per page (the
-  // fade itself re-applies freely). Unknown files count as visible.
+  // fade itself re-applies freely). Unknown files count as visible. Prefix
+  // matching over known file paths where rows carry them (React TreeView
+  // row ids); the classic nested-<ul> walk is the fallback.
   const userToggledFolders = new Set<string>();
   const autoCollapsedFolders = new Set<string>();
+  const fileRowStates = new Map<string, DisplayState>();
   const recomputeFolderStates = rafThrottled(() => {
     for (const row of document.querySelectorAll(TREE_ROW_SELECTOR)) {
       if (!isFolderRow(row)) {
         continue;
       }
 
-      const state = aggregateFolderState(folderFileStates(row, stateOfTreeRow));
+      const key = folderKey(row);
+      const byPath = key ? folderStatesByPath(key, fileRowStates) : [];
+      const state =
+        byPath.length > 0
+          ? aggregateFolderState(byPath)
+          : aggregateFolderState(folderFileStates(row, stateOfTreeRow));
       applyFolderState(row, state);
       maybeAutoCollapseFolder(row, state, userToggledFolders, autoCollapsedFolders);
     }

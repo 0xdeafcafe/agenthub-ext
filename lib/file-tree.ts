@@ -5,19 +5,26 @@ import type {DisplayState} from './state';
  * category, fades folders whose contents are entirely faded, and closes a
  * folder's disclosure once when it first goes fully faded.
  *
- * Rows are classified by their full path when the tree carries one (the
- * classic view's hidden `data-filterable-item-text` span) - that works from
+ * Rows are classified by their full path when the tree carries one - the
+ * classic view's hidden `data-filterable-item-text` span, or the React
+ * TreeView's row id, which IS the full path (seen live). That works from
  * first paint, even for files the diff hasn't mounted yet. Rows without a
  * path fall back to matching the diff container's `#diff-<hash>` anchor,
  * and rows with neither count as unknown, which the rollup treats as
  * visible: a folder fading late beats a folder faded by mistake.
  *
+ * Folder rollups prefer path-prefix matching over DOM nesting: the React
+ * TreeView gives every row a full-path id, while its folder rows don't
+ * reliably nest child rows. The classic nested `<ul>` rollup is the
+ * fallback for trees without paths.
+ *
  * Rows are dimmed in place, never removed (removal would fight GitHub's
  * tree filtering).
  */
 
-// Classic view: li.ActionList-item.js-tree-node; React view: li[class*="file-tree-row"]
-export const TREE_ROW_SELECTOR = 'li.js-tree-node, li[class*="file-tree-row"]';
+// Classic view: li.ActionList-item.js-tree-node; React view: Primer TreeView
+// items (li[role="treeitem"], DiffFileTree-module__file-tree-row__* classes).
+export const TREE_ROW_SELECTOR = 'li.js-tree-node, li[class*="file-tree-row"], li[role="treeitem"]';
 
 /** The linked file container's id (`diff-<hash>`), or null for directory rows. */
 export function treeRowContainerId(row: Element): string | null {
@@ -25,17 +32,28 @@ export function treeRowContainerId(row: Element): string | null {
   return anchor?.getAttribute('href')?.slice(1) ?? null;
 }
 
-/** The row's full file path from the hidden filter-text span, when the tree carries one. */
+/** The row's full file path, when the tree carries one. */
 export function treeRowPath(row: Element): string | null {
-  const el = row.querySelector(':scope > [data-filterable-item-text]');
-  return el?.textContent?.trim() || null;
+  // Classic view: the hidden filter-text span carries the full path.
+  const filterPath = row.querySelector(':scope > [data-filterable-item-text]')?.textContent?.trim();
+  if (filterPath) {
+    return filterPath;
+  }
+
+  // React TreeView: the row's own id is the full path (seen live).
+  if (row.matches('li[class*="file-tree-row"]') && row.id) {
+    return row.id;
+  }
+
+  return null;
 }
 
-/** Folder rows: explicit directory marker, or a row with nested child rows. */
+/** Folder rows: explicit directory marker, an expand/collapse state (self or child), or nested child rows. */
 export function isFolderRow(row: Element): boolean {
   return (
     row.getAttribute('data-tree-entry-type') === 'directory' ||
-    row.querySelector(':scope > ul li') !== null
+    row.hasAttribute('aria-expanded') ||
+    row.querySelector(':scope > [aria-expanded], :scope > ul li') !== null
   );
 }
 
@@ -97,17 +115,52 @@ export function applyTreeRowState(row: Element, category: string, state: Display
   }
 }
 
-/** The folder row's own disclosure control - the thing a user would click. */
-export function folderDisclosure(row: Element): HTMLElement | null {
-  return row.querySelector(':scope > [aria-expanded]');
+/**
+ * States of known files under a folder path, by prefix match - for trees
+ * whose rows carry full paths (React TreeView row ids), where folder rows
+ * don't reliably nest their children in the DOM.
+ */
+export function folderStatesByPath(folderPath: string, fileStates: ReadonlyMap<string, DisplayState>): DisplayState[] {
+  const prefix = `${folderPath}/`;
+  const states: DisplayState[] = [];
+  for (const [path, state] of fileStates) {
+    if (path.startsWith(prefix)) {
+      states.push(state);
+    }
+  }
+
+  return states;
 }
 
 /**
- * A folder identity that survives GitHub re-creating row elements: the
- * label chain from the tree root, e.g. "packages/react-dom/src". Null when
- * no labels are readable (better to skip auto-collapse than to misfire).
+ * A folder's open state and the thing a user would click to toggle it.
+ * Classic view: one child element carries both (the ActionList button).
+ * React TreeView: aria-expanded lives on the row itself, and the click
+ * target is its content child.
+ */
+export function folderDisclosure(row: Element): {stateHolder: Element; toggle: HTMLElement} | null {
+  if (row.hasAttribute('aria-expanded')) {
+    const content = row.querySelector<HTMLElement>(
+      ':scope > [class*="TreeView-item-content"], :scope > .ActionList-content, :scope > a, :scope > button',
+    );
+    return {stateHolder: row, toggle: content ?? (row as HTMLElement)};
+  }
+
+  const child = row.querySelector<HTMLElement>(':scope > [aria-expanded]');
+  return child ? {stateHolder: child, toggle: child} : null;
+}
+
+/**
+ * A folder identity that survives GitHub re-creating row elements. React
+ * TreeView rows carry the full path as their id; on the classic view it's
+ * the label chain from the tree root, e.g. "packages/react-dom/src". Null
+ * when neither is readable (better to skip auto-collapse than to misfire).
  */
 export function folderKey(row: Element): string | null {
+  if (row.id) {
+    return row.id;
+  }
+
   const labels: string[] = [];
   let current: Element | null = row;
   while (current) {
@@ -148,11 +201,11 @@ export function maybeAutoCollapseFolder(
   }
 
   const disclosure = folderDisclosure(row);
-  if (disclosure?.getAttribute('aria-expanded') !== 'true') {
+  if (disclosure?.stateHolder.getAttribute('aria-expanded') !== 'true') {
     return false;
   }
 
   autoCollapsed.add(key);
-  disclosure.click();
+  disclosure.toggle.click();
   return true;
 }
