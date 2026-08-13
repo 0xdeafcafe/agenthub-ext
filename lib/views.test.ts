@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import {describe, expect, it} from 'vitest';
-import {adapters, outerFileWrapper} from './views';
+import {adapters, isFileContainer, outerFileWrapper} from './views';
 
 const react = adapters.find(adapter => adapter.name === 'react')!;
 
@@ -122,5 +122,28 @@ describe('outerFileWrapper', () => {
       </div></main>`;
     const wrapper = outerFileWrapper(document.querySelector('#diff-a')!);
     expect(wrapper.className).toBe('row');
+  });
+});
+
+describe('isFileContainer', () => {
+  it('accepts a hex-id react file container', () => {
+    document.body.innerHTML = '<div id="diff-8f14e45fceea167a5a36dedd4bea2543"></div>';
+    expect(isFileContainer(document.querySelector('div')!)).toBe(true);
+  });
+
+  it('rejects react page chrome that matches the id prefix (seen live)', () => {
+    for (const id of ['diff-file-tree-filter', 'diff-comparison-viewer-container']) {
+      document.body.innerHTML = `<div id="${id}"></div>`;
+      expect(isFileContainer(document.querySelector('div')!)).toBe(false);
+    }
+  });
+
+  it('rejects a react container nesting another file container', () => {
+    document.body.innerHTML = `
+      <div id="diff-comparison-viewer-container">
+        <div id="diff-8f14e45fceea167a5a36dedd4bea2543"></div>
+      </div>`;
+    expect(isFileContainer(document.querySelector('#diff-comparison-viewer-container')!)).toBe(false);
+    expect(isFileContainer(document.querySelector('#diff-8f14e45fceea167a5a36dedd4bea2543')!)).toBe(true);
   });
 });

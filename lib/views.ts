@@ -225,6 +225,15 @@ export function outerFileWrapper(container: Element): Element {
 }
 
 /**
+ * Real React-view file containers are `div#diff-<md5 hex of the file path>`.
+ * The `div[id^="diff-"]` prefix also matches page chrome - seen live:
+ * `#diff-file-tree-filter` (the tree search box) and
+ * `#diff-comparison-viewer-container` (the whole viewer wrapper). Neither is
+ * a file, so the react adapter only claims hex-id'd elements.
+ */
+const REACT_FILE_ID = /^diff-[0-9a-f]{8,}$/;
+
+/**
  * Plausibility guard against selector over-match (the React container
  * selector is prefix-based and could one day match a page-level wrapper).
  * A real file container is never <body>/<main> and never nests another
@@ -232,6 +241,10 @@ export function outerFileWrapper(container: Element): Element {
  */
 export function isFileContainer(element: Element): boolean {
   if (element === document.body || element === document.documentElement || element.tagName === 'MAIN') {
+    return false;
+  }
+
+  if (element.matches(reactAdapter.containerSelector) && !REACT_FILE_ID.test(element.id)) {
     return false;
   }
 

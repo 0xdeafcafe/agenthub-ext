@@ -62,14 +62,31 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
 export const PR_HEADER_PROBE = 'a[href$="/commits"]';
 
 /**
+ * The header probe exists to keep the bar below the PR header, not out of
+ * every parent that happens to contain it: on the React files view the whole
+ * page content (header tabs + diff viewer) shares one block parent, and the
+ * correct mount point is inside that parent, right above the viewer (seen
+ * live on langwatch#6894). So a probed parent is only off-limits when our
+ * insertion point does not follow the header in document order - inserting
+ * before a child that comes after the header lands below it, which is fine.
+ */
+function isBelowHeader(parent: Element, child: Element): boolean {
+  const header = parent.querySelector(PR_HEADER_PROBE);
+  if (!header) {
+    return true; // no header at this level - an ordinary ancestor
+  }
+
+  return Boolean(header.compareDocumentPosition(child) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
+/**
  * Where to mount the bar, given the element it should sit in front of.
  * Never returns a flex/grid parent: inserting into GitHub's row layout
  * makes the bar a layout column of its own (seen live on the React files
  * view - bar column, then tree, then diff, with dead space under the bar).
- * And never climbs above the files region: on one React page variant every
- * ancestor up past the PR header was flex, and the bar landed full-bleed
- * above the PR title. The climb stops at any ancestor that also holds the
- * PR header tab row; if nothing block-flow was found below that point we
+ * And never climbs above the PR header: the climb stops at the first
+ * ancestor whose header tab row does not precede our insertion point (see
+ * isBelowHeader). If nothing block-flow was found below that point we
  * return null - better no bar than a mangled page.
  */
 export function findBarPlacement(anchor: Element): {parent: Element; before: Element | null} | null {
@@ -77,9 +94,9 @@ export function findBarPlacement(anchor: Element): {parent: Element; before: Ele
   let parent = anchor.parentElement;
   let deepestBlock: {parent: Element; before: Element | null} | null = null;
   for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
-    if (parent.querySelector(PR_HEADER_PROBE)) {
-      // This ancestor holds the PR header as well as the files UI - above
-      // the region the bar belongs to.
+    if (!isBelowHeader(parent, child)) {
+      // This ancestor holds the PR header at or below our insertion point -
+      // above the region the bar belongs to.
       return deepestBlock;
     }
 
@@ -103,7 +120,7 @@ export function findBarPlacement(anchor: Element): {parent: Element; before: Ele
  * A nowrap flex row would squeeze its siblings to make room for us, so we
  * climb past it; a block parent needs no styling (findBarPlacement would
  * have found it, but harmless to accept here). Same bounds as before: never
- * above an ancestor that holds the PR header, never past <main>. Sets the
+ * at or above the PR header (isBelowHeader), never past <main>. Sets the
  * needed inline style on the bar element as a side effect.
  */
 export function spanningBarPlacement(
@@ -113,7 +130,7 @@ export function spanningBarPlacement(
   let child: Element = anchor;
   let parent = anchor.parentElement;
   for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
-    if (parent.querySelector(PR_HEADER_PROBE)) {
+    if (!isBelowHeader(parent, child)) {
       return null;
     }
 

@@ -111,7 +111,10 @@ describe('findBarPlacement above the React PR page', () => {
     expect(placement.before).toBe(document.querySelector('#row'));
   });
 
-  it('refuses to climb above the PR header when everything below is flex', () => {
+  it('places inside a header-holding parent when the files region follows the header', () => {
+    // Live on langwatch#6894 (React files view): the whole page content -
+    // header tabs and the diff viewer - shares one block parent. The correct
+    // mount is inside it, right above the viewer, below the header.
     document.body.innerHTML = `
       <main>
         <div id="page">
@@ -121,7 +124,39 @@ describe('findBarPlacement above the React PR page', () => {
           </div>
         </div>
       </main>`;
-    // #page is block but holds the PR header - too far. Null, not a full-bleed bar.
+    const placement = findBarPlacement(document.querySelector('#diff-a')!)!;
+    expect(placement.parent).toBe(document.querySelector('#page'));
+    expect(placement.before).toBe(document.querySelector('#row'));
+  });
+
+  it('mounts above the diff viewer on the live React page shape (langwatch#6894)', () => {
+    // The exact chain reported from the failing page: block all the way up,
+    // with the header tabs sharing the anchor's parent.
+    document.body.innerHTML = `
+      <main>
+        <div id="content">
+          <div id="header"><a href="/langwatch/langwatch/pull/6894/commits">Commits</a></div>
+          <div id="diff-comparison-viewer-container" class="DiffComparisonViewer-module__Container__YGBgR tmp-mt-4"></div>
+        </div>
+      </main>`;
+    const anchor = document.querySelector('#diff-comparison-viewer-container')!;
+    const placement = findBarPlacement(anchor)!;
+    expect(placement.parent).toBe(document.querySelector('#content'));
+    expect(placement.before).toBe(anchor);
+  });
+
+  it('refuses when the insertion point does not follow the PR header', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="page">
+          <div id="row" style="display: flex">
+            <div id="viewer" style="display: flex"><div id="diff-a"></div></div>
+          </div>
+          <div id="header"><a href="/o/r/pull/1/commits">Commits</a></div>
+        </div>
+      </main>`;
+    // #page is block but the header sits below our anchor - placing there
+    // would put the bar above the header. Null, not a full-bleed bar.
     expect(findBarPlacement(document.querySelector('#diff-a')!)).toBeNull();
   });
 });
@@ -192,12 +227,25 @@ describe('spanningBarPlacement', () => {
     expect(bar.style.flex).toBe('');
   });
 
-  it('refuses a parent that also holds the PR header', () => {
+  it('accepts a parent that also holds the PR header when the anchor follows it', () => {
     document.body.innerHTML = `
       <main>
         <div id="page">
           <a href="/o/r/pull/1/commits">Commits</a>
           <div id="diff-a"></div>
+        </div>
+      </main>`;
+    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div'))!;
+    expect(placement.parent).toBe(document.querySelector('#page'));
+    expect(placement.before).toBe(document.querySelector('#diff-a'));
+  });
+
+  it('refuses a header-holding parent when the anchor does not follow the header', () => {
+    document.body.innerHTML = `
+      <main>
+        <div id="page">
+          <div id="diff-a"></div>
+          <a href="/o/r/pull/1/commits">Commits</a>
         </div>
       </main>`;
     expect(spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div'))).toBeNull();
