@@ -137,18 +137,26 @@ describe('maybeAutoCollapseFolder', () => {
 describe('react TreeView rows', () => {
   beforeEach(() => {
     // Modelled on the live React files view markup (probed from a
-    // langwatch/langwatch /changes page): flat-ish Primer TreeView, the
-    // row's id is the full path, aria-expanded lives on the folder row.
+    // langwatch/langwatch /changes page): Primer TreeView, the row's id is
+    // the full path, aria-expanded lives on the folder row, and the clickable
+    // controls are grandchildren (li > item-container > toggle/content).
     document.body.innerHTML = `
       <ul role="tree">
-        <li role="treeitem" aria-level="1" aria-expanded="true" id="platform" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B">
-          <div class="PRIVATE_TreeView-item-content"><span class="PRIVATE_TreeView-item-label">platform</span></div>
+        <li role="treeitem" aria-level="1" aria-expanded="true" id="platform" class="PRIVATE_TreeView-item prc-TreeView-TreeViewItem-Ter5f">
+          <div class="PRIVATE_TreeView-item-container">
+            <div class="PRIVATE_TreeView-item-toggle"><svg></svg></div>
+            <div class="PRIVATE_TreeView-item-content"><span class="PRIVATE_TreeView-item-content-text"><span>platform</span></span></div>
+          </div>
           <ul role="group">
             <li role="treeitem" aria-level="2" id="platform/app/src/__tests__/foo.unit.test.ts" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B" aria-label="foo.unit.test.ts">
-              <div class="PRIVATE_TreeView-item-content"><a href="#diff-aaa111">foo.unit.test.ts</a></div>
+              <div class="PRIVATE_TreeView-item-container">
+                <div class="PRIVATE_TreeView-item-content"><a href="#diff-aaa111">foo.unit.test.ts</a></div>
+              </div>
             </li>
             <li role="treeitem" aria-level="2" id="platform/app/src/index.ts" class="PRIVATE_TreeView-item DiffFileTree-module__file-tree-row__PCB1B" aria-label="index.ts">
-              <div class="PRIVATE_TreeView-item-content"><a href="#diff-bbb222">index.ts</a></div>
+              <div class="PRIVATE_TreeView-item-container">
+                <div class="PRIVATE_TreeView-item-content"><a href="#diff-bbb222">index.ts</a></div>
+              </div>
             </li>
           </ul>
         </li>
@@ -179,9 +187,12 @@ describe('react TreeView rows', () => {
     expect(folderStatesByPath('other', states)).toEqual([]);
   });
 
-  it('auto-collapses by clicking the content child while reading state from the row', () => {
+  it('auto-collapses by clicking the chevron toggle while reading state from the row', () => {
     const folderRow = document.getElementById('platform')!;
-    folderDisclosure(folderRow)!.toggle.addEventListener('click', () => {
+    const disclosure = folderDisclosure(folderRow)!;
+    expect(disclosure.stateHolder).toBe(folderRow);
+    expect(disclosure.toggle.className).toContain('TreeView-item-toggle');
+    disclosure.toggle.addEventListener('click', () => {
       folderRow.setAttribute('aria-expanded', 'false');
     });
 

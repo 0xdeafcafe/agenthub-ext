@@ -135,14 +135,19 @@ export function folderStatesByPath(folderPath: string, fileStates: ReadonlyMap<s
 /**
  * A folder's open state and the thing a user would click to toggle it.
  * Classic view: one child element carries both (the ActionList button).
- * React TreeView: aria-expanded lives on the row itself, and the click
- * target is its content child.
+ * React TreeView: aria-expanded lives on the row itself, and the clickable
+ * controls are grandchildren (li > item-container > toggle/content) - the
+ * dedicated chevron toggle first, the content label as fallback. Clicking
+ * the row itself reaches no handler, so never target it.
  */
 export function folderDisclosure(row: Element): {stateHolder: Element; toggle: HTMLElement} | null {
   if (row.hasAttribute('aria-expanded')) {
-    const content = row.querySelector<HTMLElement>(
-      ':scope > [class*="TreeView-item-content"], :scope > .ActionList-content, :scope > a, :scope > button',
-    );
+    const chevron = row.querySelector<HTMLElement>('[class*="TreeView-item-toggle"]');
+    if (chevron) {
+      return {stateHolder: row, toggle: chevron};
+    }
+
+    const content = row.querySelector<HTMLElement>('[class*="TreeView-item-content"]');
     return {stateHolder: row, toggle: content ?? (row as HTMLElement)};
   }
 
