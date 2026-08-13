@@ -22,7 +22,7 @@ import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, readPrCounts, w
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {defaultStateFor, CategoryStateStore, type DisplayState} from '../lib/state';
-import {adapterFor, containerSelector, headerSelector, isFileContainer, outerFileWrapper} from '../lib/views';
+import {adapterFor, containerSelector, headerSelector, isFileContainer, outerFileWrapper, type ChangedLines} from '../lib/views';
 
 // Matches /pull/:n/files and /pull/:n/changes (incl. /changes/<sha>..<sha>).
 // Local regex instead of github-url-detection: the installed version's
@@ -268,7 +268,7 @@ async function init(signal: AbortSignal): Promise<void> {
   }
 
   const counts = new Map<string, CategoryCount>();
-  const processed: Array<{container: Element; category: string; viewed: boolean}> = [];
+  const processed: Array<{container: Element; category: string; viewed: boolean; lines: ChangedLines | null}> = [];
   const processedById = new Map<string, {container: Element; category: string}>();
   const treeFileRows = new Set<Element>(); // every file row seen this page
   let impactMap: ImpactMap | null = seed?.impactMap ?? null;
@@ -536,13 +536,21 @@ async function init(signal: AbortSignal): Promise<void> {
   // (No separate toolbar watcher: the bar is inserted when the first file
   // container is processed - an unknown-DOM page must yield zero injections.)
 
-  observeSelector(containerSelector, container => {
+  // Full per-file processing. Containers are often observed in their loading
+  // skeleton (aria-label "Loading <path>", no header or stats mounted yet) -
+  // the header observer below re-enters here once the real header exists.
+  // Idempotent via the processed list: a container is counted exactly once.
+  const processContainer = (container: Element): void => {
     // Plausibility guard: never classify/state a page-level wrapper that
     // happens to match the prefix selector (contains real containers inside).
     // Expected on every page (diff-layout-component matches div[id^="diff-"]),
     // so this is a debug-level note, not an error.
     if (!isFileContainer(container)) {
       console.debug('[PR Impact]', 'skipped implausible container', container.id || container.className);
+      return;
+    }
+
+    if (processed.some(entry => entry.container === container)) {
       return;
     }
 
@@ -586,7 +594,7 @@ async function init(signal: AbortSignal): Promise<void> {
       injectBadge(header, category);
     }
 
-    processed.push({container, category, viewed});
+    processed.push({container, category, viewed, lines});
     if (container.id) {
       processedById.set(container.id, {container, category});
       // A tree row seen before its file mounted gets classified now
@@ -605,7 +613,9 @@ async function init(signal: AbortSignal): Promise<void> {
 
     insertBar(bar);
     refreshBar();
-  }, signal);
+  };
+
+  observeSelector(containerSelector, processContainer, signal);
 
   observeSelector(TREE_ROW_SELECTOR, row => {
     if (isFolderRow(row)) {
@@ -624,17 +634,36 @@ async function init(signal: AbortSignal): Promise<void> {
   observeSelector(headerSelector, header => {
     const container = header.closest(containerSelector);
     if (!container?.hasAttribute('data-prix-seen')) {
-      return; // container not processed yet - its own pass handles the header
+      return; // container not observed yet - its own pass handles the header
     }
 
     const entry = processed.find(p => p.container === container);
     if (!entry) {
+      // Observed in its loading skeleton with no readable path - process
+      // properly now that the header exists.
+      processContainer(container);
       return;
     }
 
     markHeaderChild(container, header);
     injectBadge(header, entry.category);
     applyState(container, stateOf(entry.category));
+
+    // A container processed from its loading skeleton contributed 0 lines -
+    // the per-file stats only exist once the header mounts.
+    if (entry.lines === null) {
+      const lines = adapterFor(container)?.getChangedLines(container) ?? null;
+      if (lines) {
+        entry.lines = lines;
+        const count = counts.get(entry.category);
+        if (count) {
+          count.added += lines.added;
+          count.removed += lines.removed;
+        }
+
+        refreshBar();
+      }
+    }
   }, signal);
 }
 

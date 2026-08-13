@@ -79,6 +79,19 @@ describe('react adapter getPath', () => {
     );
     expect(react.getPath(container)).toBe('new/bar.ts');
   });
+
+  it('reads the path from the aria-label of a loading skeleton (seen live)', () => {
+    document.body.innerHTML =
+      '<div id="diff-8f14e45fceea167a5a36dedd4bea2543" role="region" aria-label="Loading platform/app/src/server/__tests__/foo.integration.test.ts"></div>';
+    expect(react.getPath(document.querySelector('div')!)).toBe(
+      'platform/app/src/server/__tests__/foo.integration.test.ts',
+    );
+  });
+
+  it('returns null for a container with no header and no path label', () => {
+    document.body.innerHTML = '<div id="diff-8f14e45fceea167a5a36dedd4bea2543" role="region"></div>';
+    expect(react.getPath(document.querySelector('div')!)).toBeNull();
+  });
 });
 
 describe('outerFileWrapper', () => {

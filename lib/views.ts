@@ -123,12 +123,17 @@ const reactAdapter: ViewAdapter = {
       container.querySelector('h3[class^="DiffFileHeader-module__file-name"] code') ??
       queryByClassPrefix(container, 'DiffFileHeader-module__file-name');
     const text = nameElement?.textContent?.replaceAll(/[\u200E\u200F]/gu, '').trim();
-    if (!text) {
-      return null;
+    if (text) {
+      const arrow = text.lastIndexOf('→');
+      return (arrow === -1 ? text : text.slice(arrow + 1).trim()) || null;
     }
 
-    const arrow = text.lastIndexOf('→');
-    return (arrow === -1 ? text : text.slice(arrow + 1).trim()) || null;
+    // Loading skeletons have no header yet; the path sits in the
+    // container's own aria-label as "Loading <path>" (seen live). Accept a
+    // bare path label too - cheap insurance against header class renames.
+    const label = container.getAttribute('aria-label')?.trim() ?? '';
+    const path = label.startsWith('Loading ') ? label.slice('Loading '.length).trim() : label;
+    return path.includes('/') ? path : null;
   },
   getHeader(container) {
     return queryByClassPrefix(container, 'DiffFileHeader-module__diff-file-header');

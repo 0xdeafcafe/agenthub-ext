@@ -240,11 +240,13 @@ describe('spanningBarPlacement', () => {
     expect(placement.before).toBe(document.querySelector('#diff-a'));
   });
 
-  it('refuses a header-holding parent when the anchor does not follow the header', () => {
+  it('refuses a header-holding ancestor when the climb passes the header', () => {
+    // The header probe stops the climb, not the anchor's own parent: placing
+    // right before the anchor always lands where the anchor is.
     document.body.innerHTML = `
       <main>
         <div id="page">
-          <div id="diff-a"></div>
+          <div id="row" style="display: flex; flex-wrap: nowrap"><div id="diff-a"></div></div>
           <a href="/o/r/pull/1/commits">Commits</a>
         </div>
       </main>`;

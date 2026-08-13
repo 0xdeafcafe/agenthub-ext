@@ -62,13 +62,14 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
 export const PR_HEADER_PROBE = 'a[href$="/commits"]';
 
 /**
- * The header probe exists to keep the bar below the PR header, not out of
- * every parent that happens to contain it: on the React files view the whole
- * page content (header tabs + diff viewer) shares one block parent, and the
- * correct mount point is inside that parent, right above the viewer (seen
- * live on langwatch#6894). So a probed parent is only off-limits when our
- * insertion point does not follow the header in document order - inserting
- * before a child that comes after the header lands below it, which is fine.
+ * The header probe exists to keep the bar below the PR header while climbing,
+ * not out of the anchor's own parent: inserting right before the anchor lands
+ * exactly where the anchor is, and the anchor is the files region by
+ * construction (the toolbar's next sibling or the first file container). Only
+ * above that level does a probed parent need the insertion point to follow
+ * the header in document order - seen live on langwatch#6894, where the whole
+ * page content (header tabs + diff viewer) shares one block parent and the
+ * correct mount is inside it, right above the viewer.
  */
 function isBelowHeader(parent: Element, child: Element): boolean {
   const header = parent.querySelector(PR_HEADER_PROBE);
@@ -94,9 +95,9 @@ export function findBarPlacement(anchor: Element): {parent: Element; before: Ele
   let parent = anchor.parentElement;
   let deepestBlock: {parent: Element; before: Element | null} | null = null;
   for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
-    if (!isBelowHeader(parent, child)) {
-      // This ancestor holds the PR header at or below our insertion point -
-      // above the region the bar belongs to.
+    if (hops > 0 && !isBelowHeader(parent, child)) {
+      // Climbed into an ancestor whose PR header sits at or below our
+      // insertion point - above the region the bar belongs to.
       return deepestBlock;
     }
 
@@ -130,7 +131,7 @@ export function spanningBarPlacement(
   let child: Element = anchor;
   let parent = anchor.parentElement;
   for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
-    if (!isBelowHeader(parent, child)) {
+    if (hops > 0 && !isBelowHeader(parent, child)) {
       return null;
     }
 
