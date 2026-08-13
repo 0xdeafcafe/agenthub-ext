@@ -95,6 +95,55 @@ describe('ImpactBar markup', () => {
   });
 });
 
+describe('ImpactBar condensed diffstat', () => {
+  const handlers = {onCycle() {}, onExpandAll() {}, onCollapseAll() {}, onCopy() {}, onJump() {}};
+  const counts = new Map([
+    ['tests', {files: 2, added: 5000, removed: 500, reviewed: 0}],
+    ['code', {files: 3, added: 2015, removed: 170, reviewed: 0}],
+  ]);
+
+  it('stays hidden when nothing is filtered', () => {
+    const bar = new ImpactBar(['tests', 'code'], handlers);
+    bar.update(counts, () => 'visible');
+    expect(bar.element.querySelector<HTMLElement>('.prix-diffstat')!.hidden).toBe(true);
+  });
+
+  it('shows original vs shown lines and proportion blocks when filtering', () => {
+    const bar = new ImpactBar(['tests', 'code'], handlers);
+    bar.update(counts, name => (name === 'tests' ? 'hidden' : 'visible'));
+    const diffstat = bar.element.querySelector<HTMLElement>('.prix-diffstat')!;
+    expect(diffstat.hidden).toBe(false);
+    expect(diffstat.querySelector('.prix-diffstat-orig')!.textContent).toBe('+7,015 −670');
+    expect(diffstat.querySelector('.prix-diffstat-added')!.textContent).toBe('+2,015');
+    expect(diffstat.querySelector('.prix-diffstat-removed')!.textContent).toBe('−170');
+    // 2,185 of 7,685 lines still shown - 1 of 5 blocks filled
+    expect(diffstat.querySelectorAll('.prix-diffstat-block--filled')).toHaveLength(1);
+    expect(diffstat.title).toContain('Filtering is on');
+  });
+
+  it('treats collapsed categories as not shown', () => {
+    const bar = new ImpactBar(['tests', 'code'], handlers);
+    bar.update(counts, name => (name === 'tests' ? 'collapsed' : 'visible'));
+    const diffstat = bar.element.querySelector<HTMLElement>('.prix-diffstat')!;
+    expect(diffstat.hidden).toBe(false);
+    expect(diffstat.querySelector('.prix-diffstat-added')!.textContent).toBe('+2,015');
+  });
+
+  it('hides again when everything is expanded, and when no lines were parsed', () => {
+    const bar = new ImpactBar(['tests', 'code'], handlers);
+    bar.update(counts, name => (name === 'tests' ? 'hidden' : 'visible'));
+    bar.update(counts, () => 'visible');
+    expect(bar.element.querySelector<HTMLElement>('.prix-diffstat')!.hidden).toBe(true);
+
+    const noLines = new Map([
+      ['tests', {files: 2, added: 0, removed: 0, reviewed: 0}],
+      ['code', {files: 3, added: 0, removed: 0, reviewed: 0}],
+    ]);
+    bar.update(noLines, name => (name === 'tests' ? 'hidden' : 'visible'));
+    expect(bar.element.querySelector<HTMLElement>('.prix-diffstat')!.hidden).toBe(true);
+  });
+});
+
 describe('findBarPlacement above the React PR page', () => {
   it('lands at the top of the files region when a block ancestor exists there', () => {
     document.body.innerHTML = `

@@ -29,6 +29,55 @@
   white-space: nowrap;
 }
 
+/* Condensed diffstat: original +/− vs the lines still shown, GitHub-style
+   proportion blocks. Sits between the title and the totals in the header. */
+.prix-diffstat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  margin-right: 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.prix-diffstat-orig {
+  color: var(--fgColor-muted, #656d76);
+}
+
+.prix-diffstat-arrow {
+  color: var(--fgColor-muted, #656d76);
+}
+
+.prix-diffstat-added {
+  color: var(--fgColor-success, #1a7f37);
+  font-weight: 600;
+}
+
+.prix-diffstat-removed {
+  color: var(--fgColor-danger, #d1242f);
+  font-weight: 600;
+}
+
+.prix-diffstat-blocks {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.prix-diffstat-block {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--bgColor-neutral-muted, #afb8c133);
+  border: 1px solid var(--borderColor-muted, #d1d9e080);
+}
+
+.prix-diffstat-block--filled {
+  background: var(--bgColor-success-emphasis, #1a7f37);
+  border-color: transparent;
+}
+
 /* One continuous bar, like GitHub's repo language bar */
 .prix-bar-track {
   display: flex;

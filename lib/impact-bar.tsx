@@ -170,6 +170,11 @@ export class ImpactBar {
   readonly #chipMeta = new Map<string, HTMLSpanElement>();
   readonly #totals: HTMLSpanElement;
   readonly #chartLine: HTMLElement;
+  readonly #diffstat: HTMLElement;
+  readonly #diffstatOrig: HTMLSpanElement;
+  readonly #diffstatShownAdded: HTMLSpanElement;
+  readonly #diffstatShownRemoved: HTMLSpanElement;
+  readonly #diffstatBlocks: HTMLElement[];
 
   constructor(categories: string[], handlers: BarHandlers) {
     this.#categories = categories;
@@ -177,10 +182,28 @@ export class ImpactBar {
     this.#totals = <span className="prix-totals" /> as unknown as HTMLSpanElement;
     this.#chartLine = (<div className="prix-chart" hidden />) as unknown as HTMLElement;
 
+    // Condensed diffstat (GitHub's "+N −M" + proportion blocks, shrunk):
+    // original totals vs the lines still visible under the current filters.
+    // Only shown while filtering actually removes lines from view.
+    this.#diffstatOrig = <span className="prix-diffstat-orig" /> as unknown as HTMLSpanElement;
+    this.#diffstatShownAdded = <span className="prix-diffstat-added" /> as unknown as HTMLSpanElement;
+    this.#diffstatShownRemoved = <span className="prix-diffstat-removed" /> as unknown as HTMLSpanElement;
+    this.#diffstatBlocks = Array.from({length: 5}, () => (<span className="prix-diffstat-block" />) as HTMLElement);
+    this.#diffstat = (
+      <span className="prix-diffstat" hidden>
+        {this.#diffstatOrig}
+        <span className="prix-diffstat-arrow">→</span>
+        {this.#diffstatShownAdded}
+        {this.#diffstatShownRemoved}
+        <span className="prix-diffstat-blocks">{this.#diffstatBlocks}</span>
+      </span>
+    ) as unknown as HTMLElement;
+
     this.element = (
       <div className="prix-bar" id="prix-bar">
         <div className="prix-bar-header">
           <span className="prix-bar-title">Impact</span>
+          {this.#diffstat}
           {this.#totals}
         </div>
         <div className="prix-bar-track">
@@ -245,15 +268,33 @@ export class ImpactBar {
   }
 
   update(counts: ReadonlyMap<string, CategoryCount>, stateOf: (category: string) => DisplayState): void {
-    let totalLines = 0;
+    let totalAdded = 0;
+    let totalRemoved = 0;
     let totalFiles = 0;
     let totalReviewed = 0;
+    let shownAdded = 0;
+    let shownRemoved = 0;
+    let filtering = false;
     for (const name of this.#categories) {
       const count = counts.get(name) ?? {files: 0, added: 0, removed: 0, reviewed: 0};
-      totalLines += count.added + count.removed;
+      totalAdded += count.added;
+      totalRemoved += count.removed;
       totalFiles += count.files;
       totalReviewed += count.reviewed;
+
+      const state = stateOf(name);
+      if (count.files > 0 && state !== 'visible') {
+        filtering = true;
+      }
+
+      if (state === 'visible') {
+        shownAdded += count.added;
+        shownRemoved += count.removed;
+      }
     }
+
+    const totalLines = totalAdded + totalRemoved;
+    const shownLines = shownAdded + shownRemoved;
 
     // Line counts drive segment widths/percentages; when nothing was
     // parseable (unmounted/virtualized rows) fall back to file counts.
@@ -292,5 +333,24 @@ export class ImpactBar {
     this.#totals.textContent =
       `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${totalLines} lines` +
       (totalReviewed > 0 ? ` · ${totalReviewed} reviewed` : '');
+
+    // Condensed diffstat: only while filtering removes lines from view, and
+    // only when line counts exist to compare (unparsed/virtualised rows can
+    // leave everything at 0 - file counts would make a nonsense diffstat).
+    if (!filtering || totalLines === 0 || shownLines === totalLines) {
+      this.#diffstat.hidden = true;
+    } else {
+      this.#diffstat.hidden = false;
+      this.#diffstatOrig.textContent = `+${totalAdded.toLocaleString('en-US')} −${totalRemoved.toLocaleString('en-US')}`;
+      this.#diffstatShownAdded.textContent = `+${shownAdded.toLocaleString('en-US')}`;
+      this.#diffstatShownRemoved.textContent = `−${shownRemoved.toLocaleString('en-US')}`;
+      const filled = Math.round((shownLines / totalLines) * this.#diffstatBlocks.length);
+      this.#diffstatBlocks.forEach((block, index) => {
+        block.classList.toggle('prix-diffstat-block--filled', index < filled);
+      });
+      this.#diffstat.title =
+        `Filtering is on: +${shownAdded} −${shownRemoved} of +${totalAdded} −${totalRemoved} lines still shown ` +
+        '(collapsed and hidden categories excluded)';
+    }
   }
 }
