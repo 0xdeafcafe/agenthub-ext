@@ -51,3 +51,43 @@ describe('change clusters', () => {
     expect(layoutMap([])).toEqual([]);
   });
 });
+
+describe('large and incomplete inventories', () => {
+  it('uses file area consistently when even one line count is unavailable', () => {
+    const unknown = {...file('platform/auth.ts', 0), linesKnown: false};
+    const groups = groupChanges([unknown, file('docs/readme.md', 9000)]);
+    expect(groups.map((group) => group.weight)).toEqual([1, 1]);
+  });
+  it('splits a dominant monorepo folder into useful subdirectories', () => {
+    const groups = groupChanges(
+      [
+        file('platform/auth/login.ts', 50),
+        file('platform/auth/session.ts', 20),
+        file('platform/ui/button.ts', 30),
+        file('readme.md', 10),
+      ],
+      '',
+      2,
+    );
+    expect(groups.map(({path, directory, weight}) => ({path, directory, weight}))).toEqual([
+      {path: 'platform/auth', directory: true, weight: 70},
+      {path: 'platform/ui', directory: true, weight: 30},
+      {path: 'readme.md', directory: false, weight: 10},
+    ]);
+  });
+});
+
+it('smart clusters skip dominant wrapper folders in a monorepo', () => {
+  const files = Array.from({length: 120}, (_, i) =>
+    file(`platform/app/src/${i < 60 ? 'auth' : 'ui'}/file-${i}.ts`, 1),
+  );
+  files.push(file('docs/review.md', 10));
+  const groups = groupChanges(files, '', 0);
+  expect(groups.map((group) => group.path)).toEqual([
+    'platform/app/src/auth',
+    'platform/app/src/ui',
+    'docs',
+  ]);
+  expect(groups.reduce((sum, group) => sum + group.weight, 0)).toBe(130);
+  expect(groups.every((group) => group.name === group.path)).toBe(true);
+});

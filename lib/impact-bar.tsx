@@ -28,6 +28,8 @@ const PALETTE = [
   'var(--bgColor-severe-emphasis, #bc4c00)',
 ];
 const CODE_COLOR = 'var(--bgColor-neutral-emphasis, #6e7781)';
+export const categoryColor = (name: string, index: number): string =>
+  name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length];
 
 // Octicon paths (unfold, fold, chevron-up, chevron-down, copy) - 16px viewBox
 const ICONS = {
@@ -380,6 +382,7 @@ export class ImpactBar {
     counts: ReadonlyMap<string, CategoryCount>,
     stateOf: (category: string) => DisplayState,
     visibleCounts?: ReadonlyMap<string, CategoryCount>,
+    lineCountsKnown = true,
   ): void {
     let totalAdded = 0;
     let totalRemoved = 0;
@@ -424,7 +427,7 @@ export class ImpactBar {
 
     // Line counts drive segment widths/percentages; when nothing was
     // parseable (unmounted/virtualized rows) fall back to file counts.
-    const useLines = totalLines > 0;
+    const useLines = lineCountsKnown && totalLines > 0;
     const total = useLines ? totalLines : totalFiles;
 
     for (const name of this.#categories) {
@@ -441,7 +444,7 @@ export class ImpactBar {
 
       const filesText = `${count.files} ${count.files === 1 ? 'file' : 'files'}`;
       const linesText = lines > 0 ? ` · ${lines} lines` : '';
-      const percent = `${Math.round(share * 100)}%`;
+      const percent = `${Math.round(share * 100)}%${lineCountsKnown ? '' : ' of files'}`;
       const shareText = total > 0 && count.files > 0 ? ` · ${percent}` : '';
       const reviewedText =
         count.reviewed > 0 ? ` · ${count.reviewed} of ${count.files} reviewed` : '';
@@ -473,10 +476,11 @@ export class ImpactBar {
 
     setText(
       this.#totals,
-      `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${totalLines} lines` +
+      `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${lineCountsKnown ? `${totalLines} lines` : 'line counts incomplete'}` +
         (totalReviewed > 0 ? ` · ${totalReviewed} reviewed` : ''),
     );
-    const reduction = totalLines > 0 ? Math.round((1 - shownLines / totalLines) * 100) : 0;
+    const reduction =
+      lineCountsKnown && totalLines > 0 ? Math.round((1 - shownLines / totalLines) * 100) : 0;
     setText(
       this.#summary,
       totalFiles === 0
@@ -504,7 +508,7 @@ export class ImpactBar {
     // Condensed diffstat: only while filtering removes lines from view, and
     // only when line counts exist to compare (unparsed/virtualised rows can
     // leave everything at 0 - file counts would make a nonsense diffstat).
-    if (!filtering || totalLines === 0 || shownLines === totalLines) {
+    if (!lineCountsKnown || !filtering || totalLines === 0 || shownLines === totalLines) {
       this.#diffstat.hidden = true;
     } else {
       this.#diffstat.hidden = false;

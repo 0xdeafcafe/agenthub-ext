@@ -55,6 +55,10 @@ try {
   assert.equal(await page.locator('.fixture-file').count(), 0);
   assert.equal(await page.locator('#prix-bar').count(), 1);
   assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4298 lines');
+  assert.equal(
+    await page.locator('#prix-bar input, #prix-bar .prix-chip, #prix-bar .prix-bar-footer').count(),
+    0,
+  );
   console.log('PASS production extension: PR overview and background inventory');
   for (const view of ['files', 'changes']) {
     await page.goto(`https://github.com/acme/review-kit/pull/42/${view}?extension=1&theme=dark`);

@@ -38,8 +38,51 @@ const inventory = () =>
   );
 
 try {
+  let releaseDiff;
+  const diffGate = new Promise((resolve) => {
+    releaseDiff = resolve;
+  });
+  await page.route('**/pull/42.diff', async (route) => {
+    await diffGate;
+    await route.continue();
+  });
   await page.goto(`${preview.url}/acme/review-kit/pull/42`);
+  await page.waitForFunction(
+    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4298 lines',
+  );
+  check(
+    'cold overview uses native totals while the diff downloads',
+    (await page.locator('.prix-coverage').textContent()) === 'Loading category breakdown…' &&
+      (await page.locator('.prix-overview-category').count()) === 0,
+  );
+  releaseDiff();
   await inventory();
+  await page.unroute('**/pull/42.diff');
+  const coldCategories = await page.locator('.prix-overview-category').allTextContents();
+  check(
+    'overview has no review controls or state labels',
+    (await page
+      .locator(
+        '#prix-bar input, #prix-bar .prix-presets, #prix-bar .prix-chip, #prix-bar .prix-bar-footer',
+      )
+      .count()) === 0,
+  );
+  check(
+    'overview joins the tabs with a compact full-width summary',
+    await page.evaluate(() => {
+      const tabs = document.querySelector('.fixture-pr-tabs').getBoundingClientRect();
+      const bar = document.querySelector('#prix-bar').getBoundingClientRect();
+      return (
+        Math.abs(tabs.left - bar.left) < 1 &&
+        Math.abs(tabs.width - bar.width) < 1 &&
+        Math.abs(tabs.bottom - bar.top) < 1 &&
+        bar.height < 180
+      );
+    }),
+  );
+  await page.screenshot({path: resolve(output, 'overview-summary.png')});
+  await page.getByRole('button', {name: 'Light / dark', exact: true}).click();
+  await page.screenshot({path: resolve(output, 'overview-summary-dark.png')});
   check(
     'overview spans the wrapping GitHub header layout',
     await page.locator('#prix-bar').evaluate((el) => el.getBoundingClientRect().width > 1100),
@@ -65,11 +108,6 @@ try {
       );
     }),
   );
-  await page.getByLabel('Exclude comment-only lines', {exact: true}).check();
-  await page.waitForFunction(
-    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4283 lines',
-  );
-  check('overview supports comment exclusion', true);
   await page.locator('.prix-change-map > summary').click();
   await page.getByRole('button', {name: /^Explore folder docs,/}).click();
   await page.screenshot({path: resolve(output, 'overview-map.png')});
@@ -88,9 +126,79 @@ try {
   await page.waitForURL(`**/changes#${files[6].id}`);
   await page.locator(`#${files[6].id} .fixture-diff`).waitFor();
   check('overview map opens a filtered file at its GitHub anchor', true);
+  await inventory();
+  await page.getByLabel('Unreviewed only', {exact: true}).check();
+  await page.getByRole('button', {name: 'Expand all categories', exact: true}).click();
+  await page.goto(`${preview.url}/acme/review-kit/pull/42`);
+  await inventory();
   check(
-    'overview preferences carry to Changes',
-    await page.getByLabel('Exclude comment-only lines', {exact: true}).isChecked(),
+    'overview categories stay the same after visiting Changes and changing filters',
+    JSON.stringify(await page.locator('.prix-overview-category').allTextContents()) ===
+      JSON.stringify(coldCategories),
+  );
+  await page.goto(`${preview.url}/acme/review-kit/pull/42/changes`);
+  await inventory();
+  await page.getByLabel('Unreviewed only', {exact: true}).uncheck();
+  await page.getByLabel('Exclude comment-only lines', {exact: true}).check();
+  await page.goto(`${preview.url}/acme/review-kit/pull/42`);
+  await inventory();
+  check(
+    'overview honors saved comment exclusion with an explicit label',
+    (await page.locator('.prix-totals').textContent()) === '8 files · 4283 lines' &&
+      (await page.locator('.prix-coverage').textContent()).includes('comment-only lines excluded'),
+  );
+  await page.route('**/pull/42.diff', (route) => route.fulfill({status: 503, body: 'Unavailable'}));
+  await page.goto(`${preview.url}/acme/review-kit/pull/42`);
+  await page.waitForFunction(() =>
+    document
+      .querySelector('.prix-coverage')
+      ?.textContent?.startsWith('Category breakdown and map unavailable'),
+  );
+  check(
+    'failed overview download retains GitHub totals and hides the unavailable map',
+    (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines' &&
+      !(await page.locator('.prix-change-map').isVisible()),
+  );
+  await page.unroute('**/pull/42.diff');
+
+  await page.route('**/pull/42.diff', (route) => route.fulfill({status: 503, body: 'Unavailable'}));
+  await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?scenario=unmeasured`);
+  await page.getByRole('button', {name: 'Retry full counts', exact: true}).waitFor();
+  await page.locator('.prix-change-map > summary').click();
+  check(
+    'unloaded files use file percentages, never bogus zero-line percentages',
+    (await page.locator('.prix-totals').textContent()).includes('line counts incomplete') &&
+      (await page.locator('.prix-chip-meta').allTextContents()).every((text) =>
+        text.endsWith('% of files'),
+      ),
+  );
+  check(
+    'map distinguishes missing counts from genuine zero-line changes',
+    (await page.locator('.prix-map-note').textContent()).includes('Area follows file counts') &&
+      !(await page.locator('.prix-map-list').textContent()).includes('0 lines'),
+  );
+  await page.screenshot({path: resolve(output, 'map-unavailable.png')});
+  await page.unroute('**/pull/42.diff');
+  await page.getByRole('button', {name: 'Retry full counts', exact: true}).click();
+  await inventory();
+  check(
+    'retry fills every map file without scrolling or visiting another page',
+    !(await page.locator('.prix-map-list').textContent()).includes('unavailable') &&
+      (await page.locator('.prix-totals').textContent()) === '8 files · 4283 lines',
+  );
+  await page.goto(`${preview.url}/acme/review-kit/pull/42/changes`);
+  await inventory();
+  await page.evaluate(() => window.prixHarness.addFiles(250));
+  await page.locator('.prix-change-map > summary').click();
+  await page.getByLabel('Map folder depth', {exact: true}).waitFor();
+  check(
+    'large maps expose subfolders without an extra click',
+    (await page.getByRole('button', {name: /^Explore folder src\/lazy,/}).count()) === 1,
+  );
+  await page.getByLabel('Map folder depth', {exact: true}).selectOption('1');
+  check(
+    'large map depth can return to top-level folders',
+    (await page.getByRole('button', {name: /^Explore folder src,/}).count()) === 1,
   );
 
   await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?mode=virtualization`);

@@ -14,8 +14,10 @@ import {injectBadge} from '../lib/badges';
 import {FileIndex, adjustedLines} from '../lib/file-index';
 import {browser} from 'wxt/browser';
 import {ReviewPreferences, loadSettings, parseSettings, SETTINGS_KEY} from '../lib/preferences';
+import {diffPathForPage} from '../lib/diff';
 import {fetchInventory} from '../lib/inventory';
 import {ReviewTools} from '../lib/review-tools';
+import {initOverview} from '../lib/overview';
 import {injectFileControls} from '../lib/file-controls';
 import {
   aggregateFolderState,
@@ -120,19 +122,18 @@ function markupSnippet(el: Element): string {
   return el.outerHTML.slice(0, 200);
 }
 
-function insertBar(bar: ImpactBar, overview = false): void {
+function insertBar(bar: ImpactBar): void {
   if (document.getElementById('prix-bar')) {
     return;
   }
 
-  if (overview || new URLSearchParams(location.search).get('mode') === 'virtualization') {
+  if (new URLSearchParams(location.search).get('mode') === 'virtualization') {
     const placement = pullHeaderPlacement();
     if (placement) {
       bar.element.classList.add('prix-header-panel');
       placement.parent.insertBefore(bar.element, placement.before);
       return;
     }
-    if (overview) return;
   }
 
   const toolbar = findFilesToolbar();
@@ -279,7 +280,11 @@ async function init(signal: AbortSignal): Promise<void> {
   }
 
   const [, owner, repo, prNumber, view] = match;
-  const overview = !view;
+  if (!view) {
+    await initOverview(owner, repo, prNumber, signal);
+    return;
+  }
+  const inventoryRequest = fetchInventory(new URL(location.href), signal);
   const virtualFiles = new VirtualFiles(signal);
   const virtualMode =
     view === 'changes' && new URLSearchParams(location.search).get('mode') === 'virtualization';
@@ -351,12 +356,6 @@ async function init(signal: AbortSignal): Promise<void> {
   let virtualCursor: string | null = null;
 
   const jump = (direction: 1 | -1): void => {
-    if (overview) {
-      const files = [...index.files].filter(([path]) => effectiveState(path) !== 'hidden');
-      const path = (direction === 1 ? files[0] : files.at(-1))?.[0];
-      if (path) openFile(path);
-      return;
-    }
     const containers = [...document.querySelectorAll(containerSelector)].filter((el) => {
       const entry = processed.get(el);
       return (
@@ -476,20 +475,12 @@ async function init(signal: AbortSignal): Promise<void> {
     onCopy: copyReport,
     onJump: jump,
   });
-  if (overview || virtualMode) {
+  if (virtualMode) {
     const note = document.createElement('p');
     note.className = 'prix-view-note';
-    note.textContent = overview
-      ? 'Plan your review here. Open a file from the map or continue to Changes with your category filters.'
-      : 'Virtualized view: filtered files keep a collapsed header so scrolling stays stable.';
+    note.textContent =
+      'Virtualized view: filtered files keep a collapsed header so scrolling stays stable.';
     bar.element.querySelector('.prix-bar-footer')!.before(note);
-  }
-  if (overview) {
-    const link = document.createElement('a');
-    link.className = 'prix-open-changes';
-    link.href = `/${owner}/${repo}/pull/${prNumber}/changes`;
-    link.textContent = 'Open changes →';
-    bar.element.querySelector('.prix-actions')!.prepend(link);
   }
   if (seed?.impactMap) {
     bar.setImpactMap(seed.impactMap); // instant on revisit; the live fetch still wins when it lands
@@ -602,12 +593,29 @@ async function init(signal: AbortSignal): Promise<void> {
     repoKey,
   );
   bar.element.querySelector('.prix-bar-footer')!.before(reviewTools.element);
+  const retryInventory = document.createElement('button');
+  retryInventory.type = 'button';
+  retryInventory.className = 'prix-filter-reset';
+  retryInventory.textContent = 'Retry full counts';
+  retryInventory.hidden = true;
+  retryInventory.addEventListener('click', () => {
+    retryInventory.hidden = true;
+    coverage = 'Loading full PR inventory…';
+    refreshBar();
+    loadInventory(fetchInventory(new URL(location.href), signal));
+  });
+  reviewTools.element.querySelector('.prix-coverage')!.after(retryInventory);
   const refreshBar = rafThrottled(() => {
     const shown = index.countsFor(
       preferences.excludeComments,
       (path) => effectiveState(path) === 'visible',
     );
-    bar.update(panelCounts(), stateOf, shown);
+    bar.update(
+      panelCounts(),
+      stateOf,
+      shown,
+      [...index.files.values()].every((file) => file.lines !== null),
+    );
     bar.setImpactMap(preferences.excludeComments ? null : impactMap);
     const commentCount = preferences.excludeComments
       ? [...index.files.values()].reduce(
@@ -635,6 +643,7 @@ async function init(signal: AbortSignal): Promise<void> {
         ...adjustedLines(file, preferences.excludeComments),
         viewed: file.viewed,
         state: effectiveState(path),
+        linesKnown: file.lines !== null,
       })),
     });
     schedulePersist();
@@ -783,24 +792,6 @@ async function init(signal: AbortSignal): Promise<void> {
     });
   };
   const openFile = (path: string): void => {
-    if (overview) {
-      const filesLink = document.querySelector<HTMLAnchorElement>(
-        `a[href^="/${owner}/${repo}/pull/${prNumber}/changes"], a[href^="/${owner}/${repo}/pull/${prNumber}/files"]`,
-      );
-      const url = new URL(
-        filesLink?.href ?? `/${owner}/${repo}/pull/${prNumber}/changes`,
-        location.origin,
-      );
-      void fileAnchor(path)
-        .then((hash) => {
-          if (!signal.aborted) {
-            url.hash = hash;
-            location.assign(url);
-          }
-        })
-        .catch(() => reviewTools.announce('Open Changes to review this file.'));
-      return;
-    }
     if (virtualMode) {
       // Keep the selected path while React loads/expands it and recycles its DOM.
       virtualCursor = path;
@@ -1036,11 +1027,11 @@ async function init(signal: AbortSignal): Promise<void> {
       });
     }
 
-    insertBar(bar, overview);
+    insertBar(bar);
     refreshBar();
   };
 
-  if (!overview) observeFiles(processContainer, signal);
+  observeFiles(processContainer, signal);
 
   observeSelector(
     TREE_ROW_SELECTOR,
@@ -1057,7 +1048,7 @@ async function init(signal: AbortSignal): Promise<void> {
   );
 
   // Keep one panel through same-URL React replacements, including an empty diff.
-  const mountBar = rafThrottled(() => insertBar(bar, overview), signal);
+  const mountBar = rafThrottled(() => insertBar(bar), signal);
   const placementObserver = new MutationObserver(() => {
     if (!bar.element.isConnected) mountBar();
   });
@@ -1069,30 +1060,35 @@ async function init(signal: AbortSignal): Promise<void> {
     signal,
   );
   mountBar();
-  void fetchInventory(new URL(location.href), signal)
-    .then((result) => {
-      if (signal.aborted) return;
-      if (result.inventory?.complete) {
-        inventoryOrder = result.inventory.files.map((file) => file.path);
-        const paths = new Set(inventoryOrder);
-        const consistent = [...index.files.keys()].every((path) => paths.has(path));
-        index.seed(result.inventory.files, categoryOf);
-        inventoryPaths = consistent ? paths : null;
-        coverage = consistent
-          ? `Complete PR inventory · ${paths.size} files`
-          : 'Diff and page differ · showing discovered files';
-        applyAll();
-      } else {
-        coverage = result.reason ?? 'Counts cover files loaded so far';
-        refreshBar();
-      }
-    })
-    .catch(() => {
-      if (!signal.aborted) {
-        coverage = 'Full diff unavailable · counts cover loaded files';
-        refreshBar();
-      }
-    });
+  const loadInventory = (request: ReturnType<typeof fetchInventory>): void => {
+    void request
+      .then((result) => {
+        if (signal.aborted) return;
+        if (result.inventory?.complete) {
+          inventoryOrder = result.inventory.files.map((file) => file.path);
+          const paths = new Set(inventoryOrder);
+          const consistent = [...index.files.keys()].every((path) => paths.has(path));
+          index.seed(result.inventory.files, categoryOf);
+          inventoryPaths = consistent ? paths : null;
+          coverage = consistent
+            ? `Complete PR inventory · ${paths.size} files`
+            : 'Diff and page differ · showing discovered files';
+          applyAll();
+        } else {
+          coverage = result.reason ?? 'Counts cover files loaded so far';
+          retryInventory.hidden = !diffPathForPage(new URL(location.href));
+          refreshBar();
+        }
+      })
+      .catch(() => {
+        if (!signal.aborted) {
+          coverage = 'Full diff unavailable · counts cover loaded files';
+          retryInventory.hidden = false;
+          refreshBar();
+        }
+      });
+  };
+  loadInventory(inventoryRequest);
 }
 
 function run(): void {
