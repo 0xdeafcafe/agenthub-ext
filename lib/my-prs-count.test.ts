@@ -19,6 +19,13 @@ describe('pull-request counts', () => {
     storage.set.mockRejectedValueOnce(new Error('Quota exceeded'));
     expect(await fetchPullsCount('o', 'write-fails', PULL_TABS[0], 'octocat')).toBe(7);
   });
+  it('keeps the count if an invalidated storage context throws synchronously', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('author:octocat')));
+    storage.set.mockImplementationOnce(() => {
+      throw new Error('Extension context invalidated');
+    });
+    expect(await fetchPullsCount('o', 'invalidated-context', PULL_TABS[0], 'octocat')).toBe(7);
+  });
   it('rejects another user whose login starts with the requested login', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('author:octocat2')));
     expect(await fetchPullsCount('o', 'wrong-user', PULL_TABS[0], 'octocat')).toBeNull();
