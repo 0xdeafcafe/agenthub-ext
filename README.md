@@ -17,7 +17,7 @@ Every push to `main` also publishes these as workflow artefacts on the [Actions 
 
 ## What it does
 
-Open a PR's files page and PR Impact:
+Open a PR's overview or files page and PR Impact:
 
 - Downloads the current PR or commit-range diff to inventory files before you scroll, including renames and binary files. A coverage label distinguishes a complete inventory from counts based on loaded files. DOM observers apply controls as GitHub mounts each file.
 - Classifies each file by glob rules. Built in: `tests` (Go-style `foo_test.go` included), `specs` (`.feature` files), `docs`, `generated` (lockfiles included). Everything else is `code`. Repos can define their own categories (`server`, `sdk`, whatever) via a config file - see below.
@@ -55,6 +55,10 @@ GitHub runs two versions of the PR files page at once:
 - **New React view** at `/pull/:n/changes` (`div[id^="diff-"]` containers, hashed CSS-module classes).
 
 Both work, via per-view DOM adapters (`lib/views.ts`), including `/changes/<sha>..<sha>` range URLs.
+
+**PR overview:** the panel also appears below the PR navigation on `/pull/:number`, with full inventory, category controls, comment exclusion, presets, and the change map. Opening a map file takes you to its GitHub diff anchor and reveals it even when its category is filtered.
+
+**Virtualized changes (`?mode=virtualization`):** filtering uses GitHub’s native file disclosures so GitHub updates its own row heights. Filtered files retain a compact header in this mode. PR Impact does not hide measured slots or override spacer heights. Recycled containers and headers are reclassified by their current path; same-URL React updates preserve filters, overrides, and the open map. User clicks on native disclosures take precedence over category defaults.
 
 **Inventory and virtualization:** the full diff supplies counts for files GitHub has not mounted yet. Files are tracked by path, so remounting never double-counts them. If the download fails, has incomplete hunks, exceeds 20 MB, or the URL uses an unsupported comparison scope, the panel labels its partial coverage and keeps filtering loaded files. Cached aggregate counts are isolated by revision, comparison, rules, and classification corrections; unverified revisions expire after 15 minutes. GitHub’s reviewed state is only known for files whose native controls have mounted.
 
@@ -100,7 +104,7 @@ npm run dev:preview     # local playground at http://127.0.0.1:4173
 
 The playground runs the **real content script and CSS** against local GitHub-shaped fixtures. Only browser storage is replaced with a localStorage-backed adapter. Source changes rebuild and reload automatically, with source maps for debugging. No GitHub account or extension installation is needed.
 
-Use its toolbar to switch light/dark themes and classic/React views, mount another file, add 250 files, remount a virtualized file, replace a header, or reset saved preferences. Resizing the browser exercises the responsive layout. Open `/popup.html` to test settings, or add `?scenario=virtualized` / `?scenario=partial` to a PR fixture URL to exercise unloaded files and failed inventory downloads. All fixture network requests stay local. Set `PRIX_PORT` to change the port.
+Use its toolbar to switch light/dark themes and classic/React views, mount another file, add 250 files, remount a virtualized file, replace a header, or reset saved preferences. Resizing the browser exercises the responsive layout. Open `/popup.html` to test settings, open `/acme/review-kit/pull/42` for the overview or `/acme/review-kit/pull/42/changes?mode=virtualization` for recycled scrolling rows; or add `?scenario=virtualized` / `?scenario=partial` to a PR fixture URL to exercise unloaded files and failed inventory downloads. All fixture network requests stay local. Set `PRIX_PORT` to change the port.
 
 ### Code quality
 
@@ -122,7 +126,8 @@ Install Chromium once, then run:
 npm run test:browser:install
 npm run test:local       # core browser checks + screenshots
 npm run test:features    # map, comments, overrides, presets, settings, inventory
-npm run screenshots     # both browser suites and their screenshots
+npm run test:pages       # PR overview and a scrolling virtualizer that reuses DOM nodes
+npm run screenshots     # all three browser suites and their screenshots
 npm run test:visual     # compare 12 screenshots against checked-in baselines
 npm run test:extension  # build and test the actual unpacked MV3 extension
 ```

@@ -40,20 +40,12 @@ import {
   writePrCounts,
 } from '../lib/pr-cache';
 import {observeSelector} from '../lib/observer';
+import {observeFiles} from '../lib/file-observer';
+import {PR_PAGE_RE, PR_NAV_SELECTOR, pullHeaderPlacement, fileAnchor} from '../lib/pr-page';
+import {VirtualFiles, isVirtualFile, nativeFileToggle, isFileExpanded} from '../lib/virtual-files';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {defaultStateFor, CategoryStateStore, type DisplayState} from '../lib/state';
-import {
-  adapterFor,
-  containerSelector,
-  headerSelector,
-  isFileContainer,
-  outerFileWrapper,
-} from '../lib/views';
-
-// Matches /pull/:n/files and /pull/:n/changes (incl. /changes/<sha>..<sha>).
-// Local regex instead of github-url-detection: the installed version's
-// isPRFiles does not cover the /changes route.
-const PR_FILES_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/(?:files|changes)(?:\/|$)/;
+import {adapterFor, containerSelector, isFileContainer, outerFileWrapper} from '../lib/views';
 
 /**
  * The files toolbar, found as defensively as we can: the module-class
@@ -127,12 +119,24 @@ function markupSnippet(el: Element): string {
   return el.outerHTML.slice(0, 200);
 }
 
-function insertBar(bar: ImpactBar): void {
+function insertBar(bar: ImpactBar, overview = false): void {
   if (document.getElementById('prix-bar')) {
     return;
   }
 
+  if (overview || new URLSearchParams(location.search).get('mode') === 'virtualization') {
+    const placement = pullHeaderPlacement();
+    if (placement) {
+      bar.element.classList.add('prix-header-panel');
+      placement.parent.insertBefore(bar.element, placement.before);
+      return;
+    }
+    if (overview) return;
+  }
+
   const toolbar = findFilesToolbar();
+  // Do not fall back to a file slot while GitHub is still mounting its header.
+  if (new URLSearchParams(location.search).get('mode') === 'virtualization' && !toolbar) return;
   const anchor = toolbar?.nextElementSibling ?? document.querySelector(containerSelector);
   const placement = anchor
     ? (findBarPlacement(anchor) ?? spanningBarPlacement(anchor, bar.element))
@@ -157,33 +161,25 @@ function insertBar(bar: ImpactBar): void {
   placement.parent.insertBefore(bar.element, placement.before);
 }
 
-function applyState(container: Element, state: DisplayState): void {
-  // Over-match guard: state classes only ever land on plausible file containers
-  if (!isFileContainer(container)) {
-    logError('applyState refused a non-file-container element', container.tagName);
-    return;
-  }
-
-  // Collapsing only works once a header child is tagged - otherwise the CSS
-  // would hide every child. Fall back to visible rather than blank the file.
+const outerWrappers = new WeakMap<Element, Element>();
+function applyState(container: Element, state: DisplayState, virtualFiles: VirtualFiles): void {
+  if (!isFileContainer(container)) return;
+  const virtual = isVirtualFile(container);
   const canCollapse = container.querySelector(':scope > .prix-header') !== null;
-  const collapsed = state === 'collapsed' && canCollapse;
+  const collapsed = !virtual && state === 'collapsed' && canCollapse;
   container.classList.toggle('prix-collapsed', collapsed);
-  container.classList.toggle('prix-hidden', state === 'hidden');
-
-  // State goes on the outermost per-file wrapper too: in the React view the
-  // container can sit in a row/slot that keeps its own height, so hiding or
-  // collapsing only the container leaves scroll space behind. Strip our
-  // outer classes from any previous wrapper first - sibling mounts can move
-  // the boundary between calls.
-  const previous = container.closest('.prix-hidden-outer, .prix-collapsed-outer');
-  previous?.classList.remove('prix-hidden-outer', 'prix-collapsed-outer');
-
-  const outer = outerFileWrapper(container);
+  container.classList.toggle('prix-hidden', !virtual && state === 'hidden');
+  container.classList.toggle('prix-virtual-muted', virtual && state === 'hidden');
+  const previous = outerWrappers.get(container);
+  const outer = virtual ? container : outerFileWrapper(container);
+  if (previous && previous !== outer)
+    previous.classList.remove('prix-hidden-outer', 'prix-collapsed-outer');
   if (outer !== container) {
     outer.classList.toggle('prix-hidden-outer', state === 'hidden');
     outer.classList.toggle('prix-collapsed-outer', collapsed);
-  }
+    outerWrappers.set(container, outer);
+  } else outerWrappers.delete(container);
+  if (virtual) virtualFiles.apply(container, state);
 }
 
 /**
@@ -200,6 +196,29 @@ function markHeaderChild(container: Element, header: Element): void {
   if (node.parentElement === container) {
     node.classList.add('prix-header');
   }
+}
+
+function scrollPosition(element: Element): string {
+  const offsets = [window.scrollX, window.scrollY];
+  for (
+    let parent = element.parentElement;
+    parent && parent !== document.body;
+    parent = parent.parentElement
+  ) {
+    offsets.push(parent.scrollTop, parent.scrollLeft);
+  }
+  return offsets.join(':');
+}
+
+function fileViewportTop(element: Element): number {
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    if (
+      parent.scrollHeight > parent.clientHeight &&
+      /auto|scroll/.test(getComputedStyle(parent).overflowY)
+    )
+      return Math.max(100, parent.getBoundingClientRect().top + 1);
+  }
+  return 100;
 }
 
 /** GitHub's viewed/reviewed toggle state for a file container (logged-in only UI). */
@@ -253,12 +272,16 @@ async function init(signal: AbortSignal): Promise<void> {
   // (converges to zero DOM writes when the invariant holds).
   watchMyPrsTab(signal);
 
-  const match = PR_FILES_RE.exec(location.pathname);
+  const match = PR_PAGE_RE.exec(location.pathname);
   if (!match) {
     return;
   }
 
-  const [, owner, repo, prNumber] = match;
+  const [, owner, repo, prNumber, view] = match;
+  const overview = !view;
+  const virtualFiles = new VirtualFiles(signal);
+  const virtualMode =
+    view === 'changes' && new URLSearchParams(location.search).get('mode') === 'virtualization';
   const repoKey = `${owner}/${repo}`;
   const store = new CategoryStateStore(repoKey);
   const preferences = new ReviewPreferences(repoKey);
@@ -306,8 +329,10 @@ async function init(signal: AbortSignal): Promise<void> {
   const overrides = new Map<string, DisplayState>();
   let directory = '';
   let inventoryPaths: Set<string> | null = null;
+  let inventoryOrder: string[] = [];
   let coverage = 'Loading full PR inventory…';
   let pendingReveal: string | null = null;
+  let revealVersion = 0;
   const index = new FileIndex();
   const effectiveState = (path: string, category = categoryOf(path)): DisplayState => {
     if (directory && !path.startsWith(`${directory}/`)) return 'hidden';
@@ -320,9 +345,16 @@ async function init(signal: AbortSignal): Promise<void> {
   const processed = new WeakMap<Element, {path: string; category: string}>();
   const processedById = new Map<string, {category: string}>();
   let impactMap: ImpactMap | null = seed?.impactMap ?? null;
-  let lastJump: {target: Element; scrollY: number} | null = null;
+  let lastJump: {path: string; target: Element; position: string} | null = null;
+  let virtualCursor: string | null = null;
 
   const jump = (direction: 1 | -1): void => {
+    if (overview) {
+      const files = [...index.files].filter(([path]) => effectiveState(path) !== 'hidden');
+      const path = (direction === 1 ? files[0] : files.at(-1))?.[0];
+      if (path) openFile(path);
+      return;
+    }
     const containers = [...document.querySelectorAll(containerSelector)].filter((el) => {
       const entry = processed.get(el);
       return (
@@ -331,6 +363,28 @@ async function init(signal: AbortSignal): Promise<void> {
         (!preferences.unreviewed || !index.files.get(entry.path)?.viewed)
       );
     });
+    if (virtualMode && inventoryOrder.length) {
+      const selected = containers.find((element) => processed.get(element)?.path === virtualCursor);
+      const current =
+        virtualCursor && (!lastJump || (selected && scrollPosition(selected) === lastJump.position))
+          ? virtualCursor
+          : processed.get(
+              containers.findLast((el) => el.getBoundingClientRect().top <= fileViewportTop(el)) ??
+                containers[0],
+            )?.path;
+      const cursor = current ? inventoryOrder.indexOf(current) : -1;
+      const candidates =
+        direction === 1
+          ? inventoryOrder.slice(cursor + 1)
+          : inventoryOrder.slice(0, Math.max(0, cursor)).reverse();
+      const target = candidates.find(
+        (path) =>
+          effectiveState(path) !== 'hidden' &&
+          (!preferences.unreviewed || !index.files.get(path)?.viewed),
+      );
+      if (target) openFile(target);
+      return;
+    }
     if (containers.length === 0) {
       return;
     }
@@ -342,7 +396,7 @@ async function init(signal: AbortSignal): Promise<void> {
     // At the bottom of a short/collapsed diff the browser cannot place the
     // target at the viewport top. Retain our target until the user scrolls.
     const previousIndex =
-      lastJump && Math.abs(window.scrollY - lastJump.scrollY) < 2
+      lastJump && scrollPosition(lastJump.target) === lastJump.position
         ? containers.indexOf(lastJump.target)
         : -1;
     const currentIndex =
@@ -356,7 +410,7 @@ async function init(signal: AbortSignal): Promise<void> {
 
     const target = containers[targetIndex];
     target.scrollIntoView({block: 'start'});
-    lastJump = {target, scrollY: window.scrollY};
+    lastJump = {path: processed.get(target)!.path, target, position: scrollPosition(target)};
     for (const el of containers) {
       el.classList.remove('prix-flash');
     }
@@ -420,6 +474,21 @@ async function init(signal: AbortSignal): Promise<void> {
     onCopy: copyReport,
     onJump: jump,
   });
+  if (overview || virtualMode) {
+    const note = document.createElement('p');
+    note.className = 'prix-view-note';
+    note.textContent = overview
+      ? 'Plan your review here. Open a file from the map or continue to Changes with your category filters.'
+      : 'Virtualized view: filtered files keep a collapsed header so scrolling stays stable.';
+    bar.element.querySelector('.prix-bar-footer')!.before(note);
+  }
+  if (overview) {
+    const link = document.createElement('a');
+    link.className = 'prix-open-changes';
+    link.href = `/${owner}/${repo}/pull/${prNumber}/changes`;
+    link.textContent = 'Open changes →';
+    bar.element.querySelector('.prix-actions')!.prepend(link);
+  }
   if (seed?.impactMap) {
     bar.setImpactMap(seed.impactMap); // instant on revisit; the live fetch still wins when it lands
   }
@@ -669,7 +738,7 @@ async function init(signal: AbortSignal): Promise<void> {
       const entry = processed.get(container);
       if (!entry) continue;
       entry.category = categoryOf(entry.path);
-      applyState(container, effectiveState(entry.path, entry.category));
+      applyState(container, effectiveState(entry.path, entry.category), virtualFiles);
       const header = adapterFor(container)?.getHeader(container);
       if (header) decorateHeader(header, entry.path, entry.category);
     }
@@ -706,23 +775,68 @@ async function init(signal: AbortSignal): Promise<void> {
     });
   };
   const openFile = (path: string): void => {
+    if (overview) {
+      const filesLink = document.querySelector<HTMLAnchorElement>(
+        `a[href^="/${owner}/${repo}/pull/${prNumber}/changes"], a[href^="/${owner}/${repo}/pull/${prNumber}/files"]`,
+      );
+      const url = new URL(
+        filesLink?.href ?? `/${owner}/${repo}/pull/${prNumber}/changes`,
+        location.origin,
+      );
+      void fileAnchor(path)
+        .then((hash) => {
+          if (!signal.aborted) {
+            url.hash = hash;
+            location.assign(url);
+          }
+        })
+        .catch(() => reviewTools.announce('Open Changes to review this file.'));
+      return;
+    }
+    if (virtualMode) {
+      // Keep the selected path while React loads/expands it and recycles its DOM.
+      virtualCursor = path;
+      lastJump = null;
+    }
     if (directory && !path.startsWith(`${directory}/`)) directory = '';
     overrides.set(path, 'visible');
     applyAll();
     const container = [...document.querySelectorAll(containerSelector)].find(
       (element) => processed.get(element)?.path === path,
     );
+    const version = ++revealVersion;
     if (container) {
-      container.scrollIntoView({block: 'start'});
-      container.classList.add('prix-flash');
-      lastJump = {target: container, scrollY: window.scrollY};
-      pendingReveal = null;
+      const reveal = (): void => {
+        if (signal.aborted || version !== revealVersion) return;
+        // React can recycle the original element while committing the expansion.
+        const target = [...document.querySelectorAll(containerSelector)].find(
+          (element) => adapterFor(element)?.getPath(element) === path,
+        );
+        if (!target) {
+          pendingReveal = path;
+          return;
+        }
+        target.scrollIntoView({block: 'start'});
+        target.classList.add('prix-flash');
+        lastJump = {path, target, position: scrollPosition(target)};
+        pendingReveal = null;
+      };
+      if (isVirtualFile(container)) requestAnimationFrame(() => requestAnimationFrame(reveal));
+      else reveal();
     } else {
       pendingReveal = path;
       const row = [...document.querySelectorAll(TREE_ROW_SELECTOR)].find(
         (row) => treeRowPath(row) === path,
       );
-      row?.querySelector<HTMLElement>('a[href^="#diff-"]')?.click();
+      const anchor = row?.querySelector<HTMLAnchorElement>('a[href*="#diff-"]');
+      if (anchor) anchor.click();
+      else if (row instanceof HTMLElement) row.click();
+      else
+        void fileAnchor(path)
+          .then((hash) => {
+            if (!signal.aborted) location.hash = hash;
+          })
+          .catch(() => {});
       reviewTools.announce(
         `Selected ${path}. If it hasn’t loaded yet, use GitHub’s file tree or scroll to bring it into view.`,
       );
@@ -739,6 +853,27 @@ async function init(signal: AbortSignal): Promise<void> {
       }
     },
     {signal},
+  );
+
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!event.isTrusted) return;
+      const target = event.target instanceof Element ? event.target : null;
+      const container = target?.closest(containerSelector);
+      if (!container || !isVirtualFile(container)) return;
+      const toggle = nativeFileToggle(container);
+      const entry = processed.get(container);
+      if (!toggle || !entry || !toggle.contains(target)) return;
+      const expanded = isFileExpanded(toggle);
+      if (expanded === null) return;
+      virtualFiles.userToggle(container, !expanded);
+      overrides.set(entry.path, expanded ? 'collapsed' : 'visible');
+      requestAnimationFrame(() => {
+        if (!signal.aborted) applyAll();
+      });
+    },
+    {signal, capture: true},
   );
 
   // Shift+J/K jumps between visible files. GitHub binds no j/k variants on
@@ -850,6 +985,10 @@ async function init(signal: AbortSignal): Promise<void> {
       markHeaderChild(container, header);
     }
 
+    const previous = processed.get(container);
+    if (previous && previous.path !== path) virtualFiles.forget(container);
+    if (location.hash === `#${container.id}` && previous?.path !== path)
+      overrides.set(path, 'visible');
     const category = categoryOf(path);
     const lines = adapter.getChangedLines(container);
     const viewed = reviewedOf(container);
@@ -876,7 +1015,7 @@ async function init(signal: AbortSignal): Promise<void> {
       recomputeFolderStates();
     }
 
-    applyState(container, effectiveState(path, category));
+    applyState(container, effectiveState(path, category), virtualFiles);
     if (inventoryPaths && !inventoryPaths.has(path)) {
       inventoryPaths = null;
       coverage = 'Files changed since inventory loaded · showing discovered files';
@@ -888,11 +1027,11 @@ async function init(signal: AbortSignal): Promise<void> {
       });
     }
 
-    insertBar(bar);
+    insertBar(bar, overview);
     refreshBar();
   };
 
-  observeSelector(containerSelector, processContainer, signal);
+  if (!overview) observeFiles(processContainer, signal);
 
   observeSelector(
     TREE_ROW_SELECTOR,
@@ -908,20 +1047,25 @@ async function init(signal: AbortSignal): Promise<void> {
     signal,
   );
 
-  // Headers can arrive after skeletons or replace a previously reviewed header.
+  // Keep one panel through same-URL React replacements, including an empty diff.
+  const mountBar = rafThrottled(() => insertBar(bar, overview), signal);
+  const placementObserver = new MutationObserver(() => {
+    if (!bar.element.isConnected) mountBar();
+  });
+  placementObserver.observe(document.documentElement, {subtree: true, childList: true});
+  signal.addEventListener('abort', () => placementObserver.disconnect(), {once: true});
   observeSelector(
-    headerSelector,
-    (header) => {
-      const container = header.closest(containerSelector);
-      if (container) processContainer(container);
-    },
+    PR_NAV_SELECTOR + ', .pr-toolbar, section[class*="PullRequestFilesToolbar"]',
+    () => mountBar(),
     signal,
   );
+  mountBar();
   void fetchInventory(new URL(location.href), signal)
     .then((result) => {
       if (signal.aborted) return;
       if (result.inventory?.complete) {
-        const paths = new Set(result.inventory.files.map((file) => file.path));
+        inventoryOrder = result.inventory.files.map((file) => file.path);
+        const paths = new Set(inventoryOrder);
         const consistent = [...index.files.keys()].every((path) => paths.has(path));
         index.seed(result.inventory.files, categoryOf);
         inventoryPaths = consistent ? paths : null;
@@ -949,7 +1093,7 @@ function run(): void {
     controller?.abort();
     controller = null;
     for (const element of document.querySelectorAll(
-      '.prix-collapsed, .prix-hidden, .prix-hidden-outer, .prix-collapsed-outer, .prix-header, .prix-flash, .prix-tree-collapsed, .prix-tree-hidden',
+      '.prix-collapsed, .prix-hidden, .prix-hidden-outer, .prix-collapsed-outer, .prix-header, .prix-flash, .prix-tree-collapsed, .prix-tree-hidden, .prix-virtual-muted',
     )) {
       element.classList.remove(
         'prix-collapsed',
@@ -960,6 +1104,7 @@ function run(): void {
         'prix-flash',
         'prix-tree-collapsed',
         'prix-tree-hidden',
+        'prix-virtual-muted',
       );
     }
     for (const element of document.querySelectorAll(
@@ -983,10 +1128,7 @@ function run(): void {
   document.addEventListener('turbo:before-render', stop);
   document.addEventListener('turbo:before-cache', stop);
   document.addEventListener('turbo:render', start);
-  document.addEventListener('soft-nav:react-done', () => {
-    stop();
-    start();
-  });
+  document.addEventListener('soft-nav:react-done', start);
   window.addEventListener('popstate', start);
   window.addEventListener('pagehide', stop);
   window.addEventListener('pageshow', start);

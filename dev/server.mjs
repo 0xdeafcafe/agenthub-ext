@@ -135,7 +135,7 @@ export async function startPreview({port = 4173, watch = true} = {}) {
         );
       } else if (url.pathname === '/acme/review-kit/pull/42') {
         response.setHeader('Content-Type', 'text/html');
-        response.end('<main>No impact map in this local fixture.</main>');
+        response.end(html(url.searchParams.has('extension') ? 'fixtures' : 'preview'));
       } else if (/^\/acme\/review-kit\/pull\/42\/(?:files|changes)(?:\/.*)?$/.test(url.pathname)) {
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end(html(url.searchParams.has('extension') ? 'fixtures' : 'preview'));

@@ -57,6 +57,14 @@ try {
       errors.push(message.text());
   });
   await mkdir(resolve(root, 'e2e/screenshots/local'), {recursive: true});
+  await page.goto('https://github.com/acme/review-kit/pull/42?extension=1');
+  await page.waitForFunction(() =>
+    document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+  );
+  assert.equal(await page.locator('.fixture-file').count(), 0);
+  assert.equal(await page.locator('#prix-bar').count(), 1);
+  assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4298 lines');
+  console.log('PASS production extension: PR overview and background inventory');
   for (const view of ['files', 'changes']) {
     await page.goto(`https://github.com/acme/review-kit/pull/42/${view}?extension=1&theme=dark`);
     await page.waitForFunction(
@@ -95,6 +103,22 @@ try {
     console.log(`PASS production extension: ${view}, persistent filters, remounts, screenshot`);
   }
   assert.ok(workerDownloads >= 2, 'the background worker downloaded both inventories');
+  await page.goto(
+    'https://github.com/acme/review-kit/pull/42/changes?extension=1&mode=virtualization',
+  );
+  await page.waitForFunction(() =>
+    document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+  );
+  await page.getByRole('button', {name: 'Focus code', exact: true}).click();
+  await page.evaluate(() => window.prixHarness.virtualScroll(800));
+  await page.waitForSelector('.fixture-native-toggle[aria-expanded="false"]');
+  assert.equal(
+    await page
+      .locator('[data-virtualizer] #prix-bar, .prix-hidden-outer, .prix-collapsed-outer')
+      .count(),
+    0,
+  );
+  console.log('PASS production extension: virtualized native collapse without slot overrides');
   const popupOpened = context.waitForEvent('page', {timeout: 10_000});
   await page.getByRole('link', {name: 'Settings', exact: true}).click();
   const popup = await popupOpened;

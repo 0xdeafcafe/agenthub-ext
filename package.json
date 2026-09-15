@@ -12,7 +12,7 @@
     "compile": "tsc --noEmit",
     "dev:preview": "node dev/server.mjs",
     "test:local": "node e2e/local.mjs",
-    "screenshots": "node e2e/local.mjs && node e2e/features.mjs",
+    "screenshots": "node e2e/local.mjs && node e2e/features.mjs && node e2e/pages.mjs",
     "test:browser:install": "playwright-core install chromium",
     "test:extension": "npm run build && node e2e/extension.mjs",
     "test:features": "node e2e/features.mjs",
@@ -22,7 +22,8 @@
     "lint:fix": "npm run lint -- --fix",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
-    "check": "npm run lint && npm run fmt:check && npm run compile && npm test"
+    "check": "npm run lint && npm run fmt:check && npm run compile && npm test",
+    "test:pages": "node e2e/pages.mjs"
   },
   "dependencies": {
     "dom-chef": "^5.0.1",

@@ -135,7 +135,7 @@ const reactAdapter: ViewAdapter = {
     // bare path label too - cheap insurance against header class renames.
     const label = container.getAttribute('aria-label')?.trim() ?? '';
     const path = label.startsWith('Loading ') ? label.slice('Loading '.length).trim() : label;
-    return path.includes('/') ? path : null;
+    return label.startsWith('Loading ') ? path || null : path.includes('/') ? path : null;
   },
   getHeader(container) {
     return queryByClassPrefix(container, 'DiffFileHeader-module__diff-file-header');
@@ -214,6 +214,14 @@ export function outerFileWrapper(container: Element): Element {
     parent && hops < 4 && parent.tagName !== 'MAIN' && parent !== document.body;
     hops++
   ) {
+    // Virtualizer slots and spacers own their height/position even with one mounted file.
+    if (
+      parent.matches(
+        '[data-index], [data-virtual-index], [data-virtualizer], [data-virtuoso-scroller]',
+      ) ||
+      /(?:absolute|translate)/.test(parent.getAttribute('style') ?? '')
+    )
+      break;
     // A list of file slots is not a per-file wrapper. Check before scanning
     // its descendants so a large PR does not trigger a full scan per file.
     if (parent.childElementCount > 4) {

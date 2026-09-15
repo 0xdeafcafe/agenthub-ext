@@ -149,7 +149,7 @@ export function parseDiff(text: string): DiffInventory {
 /** Same repository only; scope full-PR inventory to the selected commit range. */
 export function diffPathForPage(url: URL): string | null {
   const match =
-    /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/(?:files|changes)(?:\/([a-f\d]{7,40}\.{2,3}[a-f\d]{7,40}))?\/?$/i.exec(
+    /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(?:files|changes)(?:\/([a-f\d]{7,40}\.{2,3}[a-f\d]{7,40}))?)?\/?$/i.exec(
       url.pathname,
     );
   if (!match || ['since', 'base', 'head', 'sha', 'commit'].some((key) => url.searchParams.has(key)))

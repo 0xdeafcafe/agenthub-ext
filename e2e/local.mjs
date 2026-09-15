@@ -1,3 +1,4 @@
+import fixtureFiles from '../dev/files.json' with {type: 'json'};
 import assert from 'node:assert/strict';
 import {mkdir, writeFile, rm, readdir} from 'node:fs/promises';
 import {resolve, dirname} from 'node:path';
@@ -21,7 +22,7 @@ const check = (name, condition) => {
   console.log(`PASS ${name}`);
 };
 const pathFor = (view) => `/acme/review-kit/pull/42/${view === 'react' ? 'changes' : 'files'}`;
-const idFor = (i) => `#diff-${(i + 1).toString(16).padStart(32, '0')}`;
+const idFor = (i) => `#${fixtureFiles[i]?.id ?? `diff-${(i + 1).toString(16).padStart(32, '0')}`}`;
 const settle = (page) =>
   page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),

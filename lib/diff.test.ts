@@ -81,6 +81,9 @@ rename to new name.md
   });
   it('scopes downloads to the current PR or commit range', () => {
     const url = (path: string): URL => new URL(path, 'https://github.com');
+    expect(diffPathForPage(url('/acme/project/pull/42'))).toBe('/acme/project/pull/42.diff');
+    expect(diffPathForPage(url('/acme/project/pull/42/'))).toBe('/acme/project/pull/42.diff');
+    expect(diffPathForPage(url('/acme/project/pull/42/checks'))).toBeNull();
     expect(diffPathForPage(url('/acme/project/pull/42/files'))).toBe('/acme/project/pull/42.diff');
     expect(diffPathForPage(url('/acme/project/pull/42/changes/abcdef0..1234567'))).toBe(
       '/acme/project/compare/abcdef0..1234567.diff',
