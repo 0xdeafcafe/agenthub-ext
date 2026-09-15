@@ -167,6 +167,32 @@ try {
       before.nativeClicks === after.nativeClicks &&
       before.scroll === after.scroll,
   );
+  const frames = await page.evaluate(async () => {
+    const snapshot = () =>
+      JSON.stringify({
+        scroll: document.querySelector('#fixture-files').scrollTop,
+        clicks: window.prixHarness.virtualMetrics.nativeClicks,
+        panelHeight: document.querySelector('#prix-bar').getBoundingClientRect().height,
+        files: [...document.querySelectorAll('.fixture-file')].map((file) => ({
+          path: file.getAttribute('data-tagsearch-path'),
+          top: file.getBoundingClientRect().top,
+          height: file.getBoundingClientRect().height,
+          expanded: file.querySelector('.fixture-native-toggle').getAttribute('aria-expanded'),
+        })),
+      });
+    const samples = [snapshot()];
+    for (let frame = 0; frame < 12; frame++) {
+      window.prixHarness.rerenderHeader();
+      document.dispatchEvent(new Event('soft-nav:react-done'));
+      await new Promise(requestAnimationFrame);
+      samples.push(snapshot());
+    }
+    return samples;
+  });
+  check(
+    'stationary virtual files keep their heights and positions through header replacements',
+    new Set(frames).size === 1,
+  );
   await page.locator('.fixture-native-toggle[aria-expanded="true"]').first().click();
   await settle();
   await settle();

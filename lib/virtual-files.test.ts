@@ -5,6 +5,32 @@ import {outerFileWrapper} from './views';
 
 afterEach(() => document.body.replaceChildren());
 describe('virtualized file visibility', () => {
+  it('does not toggle twice when React replaces a header before committing collapse', () => {
+    document.body.innerHTML =
+      '<div data-index="0"><div id="diff-aaaaaaaa"><div class="DiffFileHeader-module__diff-file-header"><button aria-label="Collapse file" aria-expanded="true">Collapse</button></div></div></div>';
+    const container = document.querySelector('#diff-aaaaaaaa')!;
+    let clicks = 0;
+    const click = () => clicks++;
+    container.querySelector('button')!.addEventListener('click', click);
+    const controller = new AbortController();
+    try {
+      const files = new VirtualFiles(controller.signal);
+      files.apply(container, 'collapsed');
+      const header = container.firstElementChild!;
+      const replacement = header.cloneNode(true) as Element;
+      header.replaceWith(replacement);
+      replacement.querySelector('button')!.addEventListener('click', click);
+      files.apply(container, 'collapsed');
+      files.apply(container, 'collapsed');
+      expect(clicks).toBe(1);
+      replacement.querySelector('button')!.setAttribute('aria-expanded', 'false');
+      files.apply(container, 'collapsed');
+      expect(clicks).toBe(1);
+      files.forget(container);
+    } finally {
+      controller.abort();
+    }
+  });
   it('waits for a trusted disclosure click to commit instead of toggling it twice', () => {
     document.body.innerHTML =
       '<div data-index="0"><div id="diff-aaaaaaaa"><div class="DiffFileHeader-module__diff-file-header"><button aria-label="Collapse file" aria-expanded="true">Collapse</button></div></div></div>';
