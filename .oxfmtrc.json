@@ -12,6 +12,7 @@
     "e2e/baselines/**",
     "package-lock.json",
     "dist/**",
-    "safari-out/**"
+    "safari-out/**",
+    "public/ai/**"
   ]
 }

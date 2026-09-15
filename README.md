@@ -153,6 +153,21 @@ Remove that key and reload to bring it back. Logs start with `[PR Impact]`; incl
 
 Built with WXT, TypeScript, dom-chef, picomatch, and YAML. Playwright handles the browser tests. No UI framework shipped to GitHub.
 
-## Local AI?
+## Ask this PR (experimental)
 
-Investigated it. Browser-local search, questions about a diff, and a small review look doable. Nothing downloads or runs yet. The [investigation](docs/browser-ai.md) covers models, sizes, architecture, and what we need to measure before shipping it.
+Open **Ask this PR** on Changes. Search works immediately, with file and line links. Pick a file or folder to keep the question focused.
+
+For answers, install **Qwen3.5 2B** (~1.1 GB), **Gemma 4 E2B** (~2.0 GB), or both. Downloads stay cached. Switching models replaces the active worker; closing the panel frees it. **Compare** asks the other model using the same excerpts. **Sources used** shows what went into the answer.
+
+Try “What behavior changed?”, “Find edge cases”, or “Check test gaps”. On a huge PR, start with one folder. A small model sees selected excerpts, not the whole repo. Generated files are excluded unless you include them.
+
+This is a draft implementation. Real-model compatibility and answer quality are still being checked; see the [checkpoint and investigation](docs/browser-ai.md). Search works without WebGPU. Inference needs a compatible GPU and browser. Model downloads come from Hugging Face after you request installation; PR code stays in the browser.
+
+```sh
+npm run test:assistant         # simulated models, UI checks and screenshots
+npm run test:ai:real           # opt-in GPU smoke test; downloads ~3.1 GB
+PRIX_REAL_AI=1 npm run dev:preview  # use real models in the local playground
+node scripts/ai/retrieval.mjs /path/to/saved.diff  # inspect retrieval without a model
+```
+
+The normal playground clearly labels simulated answers. The real test keeps its isolated profile and results under `.output/`, so subsequent runs reuse downloads. Runtime JS/WASM is packaged with the extension; model weights download separately. The [model investigation](docs/browser-ai.md) records the pinned versions and remaining checks.
