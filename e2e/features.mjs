@@ -131,6 +131,38 @@ try {
           .getByRole('button', {name: 'src/ · clear folder focus', exact: true})
           .isVisible()),
     );
+    check(
+      'restored folder focus synchronizes map breadcrumbs',
+      (await page.locator('.prix-map-breadcrumbs').textContent()) === 'All changes / src',
+    );
+    await page.getByRole('button', {name: 'src/ · clear folder focus', exact: true}).click();
+    await settle();
+    check(
+      'clearing folder focus resets the map',
+      (await page.locator('.prix-map-breadcrumbs').textContent()) === 'All changes',
+    );
+    await page.getByRole('button', {name: /^Explore folder src,/}).click();
+    await page.getByRole('button', {name: 'Focus this folder', exact: true}).click();
+    await settle();
+    await page.locator('.fixture-tree a').filter({hasText: 'docs/reviewing.md'}).click();
+    await settle();
+    check(
+      'file tree reveals a file outside the focused folder',
+      (await page.locator(`${id(6)} .fixture-diff`).isVisible()) &&
+        (await page.locator('.prix-map-breadcrumbs').textContent()) === 'All changes',
+    );
+    await page.getByRole('button', {name: /^Explore folder src,/}).click();
+    await page.getByRole('button', {name: 'Focus this folder', exact: true}).click();
+    await settle();
+    await page
+      .locator('.prix-map-breadcrumbs')
+      .getByRole('button', {name: 'All changes', exact: true})
+      .click();
+    await settle();
+    check(
+      'All changes clears the diff folder filter too',
+      await page.locator(`${id(6)} .fixture-diff`).isVisible(),
+    );
     await page.getByRole('button', {name: 'Expand all categories', exact: true}).click();
     await fileOption(0, 'Category for this file', 'docs');
     check(
@@ -177,7 +209,6 @@ try {
     await page.getByLabel('Saved review preset').selectOption('Frontend review');
     await settle();
     await page.locator('.prix-change-map > summary').click();
-    await page.getByRole('button', {name: /^Explore folder src,/}).click();
     await page.locator('#prix-bar').screenshot({path: resolve(output, `features-${view}-map.png`)});
 
     const popup = await context.newPage();

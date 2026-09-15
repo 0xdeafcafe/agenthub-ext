@@ -34,6 +34,7 @@ import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-ta
 import {
   displayCounts,
   extractHeadSha,
+  extractBaseSha,
   isCacheFresh,
   prCacheKey,
   readPrCounts,
@@ -307,7 +308,7 @@ async function init(signal: AbortSignal): Promise<void> {
     );
 
   // Per-PR aggregate cache: seed the bar's display from the last visit
-  // (same head SHA, or no SHA to compare against) so a virtualised PR
+  // (matching head and base SHAs) so a virtualised PR
   // doesn't start at 0 and grow as you scroll. Live counts take over once
   // they cover at least as many files; the two are never summed.
   // Range/config changes describe a different set of files and categories.
@@ -316,8 +317,9 @@ async function init(signal: AbortSignal): Promise<void> {
     `${cacheBase}:${JSON.stringify(Object.entries(preferences.repo.classifications).sort(([a], [b]) => a.localeCompare(b)))}`;
   const seedKey = cacheKey();
   const pageSha = extractHeadSha(document);
+  const pageBaseSha = extractBaseSha(document);
   const cacheEntry = await readPrCounts(seedKey);
-  const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha) ? cacheEntry : null;
+  const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha, pageBaseSha) ? cacheEntry : null;
   if (signal.aborted) {
     return;
   }
@@ -517,7 +519,13 @@ async function init(signal: AbortSignal): Promise<void> {
     }
 
     lastPersist = Date.now();
-    void writePrCounts(cacheKey(), {sha: pageSha, counts: best, impactMap, ts: lastPersist});
+    void writePrCounts(cacheKey(), {
+      sha: pageSha,
+      baseSha: pageBaseSha,
+      counts: best,
+      impactMap,
+      ts: lastPersist,
+    });
   };
   const schedulePersist = (): void => {
     const wait = 2000 - (Date.now() - lastPersist);
@@ -848,6 +856,7 @@ async function init(signal: AbortSignal): Promise<void> {
       const row = (event.target as Element).closest?.(TREE_ROW_SELECTOR);
       const path = row && !isFolderRow(row) ? treeRowPath(row) : null;
       if (path && effectiveState(path) !== 'visible') {
+        if (directory && !path.startsWith(`${directory}/`)) directory = '';
         overrides.set(path, 'visible');
         applyAll();
       }

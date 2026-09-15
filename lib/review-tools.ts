@@ -161,6 +161,6 @@ export class ReviewTools {
         ? current
         : '';
     }
-    this.map.update(options.files);
+    this.map.update(options.files, options.directory);
   }
 }

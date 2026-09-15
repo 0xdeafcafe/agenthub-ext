@@ -152,7 +152,10 @@ export function diffPathForPage(url: URL): string | null {
     /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/(?:files|changes)(?:\/([a-f\d]{7,40}\.{2,3}[a-f\d]{7,40}))?)?\/?$/i.exec(
       url.pathname,
     );
-  if (!match || ['since', 'base', 'head', 'sha', 'commit'].some((key) => url.searchParams.has(key)))
+  if (
+    !match ||
+    ['since', 'base', 'head', 'sha', 'commit', 'w'].some((key) => url.searchParams.has(key))
+  )
     return null;
   const [, owner, repo, pr, range] = match;
   return range ? `/${owner}/${repo}/compare/${range}.diff` : `/${owner}/${repo}/pull/${pr}.diff`;

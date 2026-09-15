@@ -64,7 +64,7 @@ export async function startPreview({port = 4173, watch = true} = {}) {
   });
   await build.rebuild();
   if (watch) await build.watch();
-  const server = createServer(async (request, response) => {
+  const handleRequest = async (request, response) => {
     const url = new URL(request.url, 'http://localhost');
     response.setHeader('Cache-Control', 'no-store');
     try {
@@ -143,6 +143,9 @@ export async function startPreview({port = 4173, watch = true} = {}) {
     } catch (error) {
       response.writeHead(500).end(String(error));
     }
+  };
+  const server = createServer((request, response) => {
+    void handleRequest(request, response).catch((error) => response.destroy(error));
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -166,8 +169,13 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     `PR Impact playground: ${preview.url}\nSource changes reload automatically. Screenshots: ${preview.url}/screenshots/`,
   );
   for (const signal of ['SIGINT', 'SIGTERM'])
-    process.once(signal, async () => {
-      await preview.close();
-      process.exit();
+    process.once(signal, () => {
+      void preview.close().then(
+        () => process.exit(),
+        (error) => {
+          console.error(error);
+          process.exit(1);
+        },
+      );
     });
 }

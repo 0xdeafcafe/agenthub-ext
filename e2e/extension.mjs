@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
 import {startPreview} from '../dev/server.mjs';
 import {browserPath} from './browser.mjs';
+import {startGithubFixture} from './github-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const extension = resolve(root, '.output/chrome-mv3');
@@ -15,39 +16,29 @@ const preview = await startPreview({port: 0, watch: false});
 const profile = await mkdtemp(join(tmpdir(), 'prix-local-extension-'));
 const errors = [];
 let workerDownloads = 0;
+let fixture;
 let context;
 try {
+  fixture = await startGithubFixture(preview.url, profile);
   context = await chromium.launchPersistentContext(profile, {
     executablePath: browserPath({extension: true}),
     headless: false,
     args: [
       '--headless=new',
+      ...fixture.args,
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
     ],
     viewport: {width: 1440, height: 1060},
     reducedMotion: 'reduce',
   });
-  await context.route('**/*', async (route) => {
-    const url = new URL(route.request().url());
-    if (url.protocol === 'chrome-extension:') return route.continue();
-    if (url.hostname !== 'github.com') return route.abort();
-    if (url.pathname.endsWith('.diff')) {
-      if (!route.request().serviceWorker()) {
-        // Public GitHub diffs redirect; force the real worker fallback here.
-        return route.fulfill({
-          status: 302,
-          headers: {
-            location: 'https://patch-diff.githubusercontent.com/raw/acme/review-kit/pull/42.diff',
-          },
-        });
-      }
+  context.on('request', (request) => {
+    if (
+      request.url().startsWith('https://github.com/') &&
+      request.url().endsWith('.diff') &&
+      request.serviceWorker()
+    )
       workerDownloads++;
-    }
-    if (url.pathname === '/__events')
-      return route.fulfill({status: 200, contentType: 'text/event-stream', body: ': fixture\n\n'});
-    const response = await route.fetch({url: `${preview.url}${url.pathname}${url.search}`});
-    await route.fulfill({response});
   });
   const page = context.pages()[0];
   page.setDefaultTimeout(15_000);
@@ -102,7 +93,12 @@ try {
     });
     console.log(`PASS production extension: ${view}, persistent filters, remounts, screenshot`);
   }
-  assert.ok(workerDownloads >= 2, 'the background worker downloaded both inventories');
+  assert.ok(workerDownloads >= 2, 'the background worker requested both inventories');
+  assert.equal(
+    fixture.metrics.patchDownloads,
+    workerDownloads,
+    'every worker download followed the patch-host redirect',
+  );
   await page.goto(
     'https://github.com/acme/review-kit/pull/42/changes?extension=1&mode=virtualization',
   );
@@ -142,6 +138,7 @@ try {
   console.log('PASS production kill switch; no content-script errors');
 } finally {
   await context?.close();
+  await fixture?.close();
   await preview.close();
   await rm(profile, {recursive: true, force: true});
 }

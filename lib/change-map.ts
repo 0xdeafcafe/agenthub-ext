@@ -99,6 +99,8 @@ export class ChangeMap {
   #summary = document.createElement('span');
   #focus: HTMLButtonElement;
   #signature = '';
+  #focusDirectory = '';
+  readonly #onFocus: (directory: string) => void;
   #width = 0;
   #resize: ResizeObserver;
   readonly #onOpen: (path: string) => void;
@@ -109,6 +111,7 @@ export class ChangeMap {
     signal: AbortSignal,
   ) {
     this.#onOpen = onOpen;
+    this.#onFocus = onFocus;
     this.element.className = 'prix-change-map';
     const summary = document.createElement('summary');
     summary.textContent = 'Change map';
@@ -152,8 +155,12 @@ export class ChangeMap {
     signal.addEventListener('abort', () => this.#resize.disconnect(), {once: true});
   }
 
-  update(files: MapFile[]): void {
-    const signature = JSON.stringify(files);
+  update(files: MapFile[], focusDirectory = ''): void {
+    if (focusDirectory !== this.#focusDirectory) {
+      this.#focusDirectory = focusDirectory;
+      this.#directory = focusDirectory;
+    }
+    const signature = JSON.stringify([files, focusDirectory]);
     if (signature === this.#signature) return;
     this.#signature = signature;
     this.#files = files;
@@ -169,6 +176,7 @@ export class ChangeMap {
     this.#breadcrumbs.replaceChildren(
       button('All changes', () => {
         this.#directory = '';
+        this.#onFocus('');
         this.#render();
       }),
     );
