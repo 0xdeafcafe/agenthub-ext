@@ -163,7 +163,7 @@ const reactAdapter: ViewAdapter = {
 
     // Last resort: count rendered rows. Row-level classes are hashed and
     // undocumented; returns null when rows aren't distinguishable, and the
-    // caller treats the file as counted-but-unmeasured (0 lines, never poisoned).
+    // caller keeps the file counted but marks its line statistics as unavailable.
     const rows = container.querySelectorAll('tr.diff-line-row');
     if (rows.length === 0) {
       return null;

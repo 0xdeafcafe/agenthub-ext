@@ -29,8 +29,9 @@ Other browsers:
 
 ## What you get
 
-- **Review focus** on the PR conversation page and both versions of Files changed. Code, tests, specs, docs, and generated files get separate controls. Click a category to expand, collapse, or hide it. **Focus code** and **Show all** do what they say.
-- **Change map** shows where the edits are. Bigger tile, more changed lines. Open folders, focus on one part of the repo, or jump straight to a file. It groups by path; it isn’t a dependency graph.
+- **Changes at a glance** sits under the PR tabs: totals, category percentages, and a change map. It works on the first visit. No hidden/expanded switches when there’s no code on screen.
+- **Review focus** on both versions of Files changed. Code, tests, specs, docs, and generated files get separate controls. Click a category to expand, collapse, or hide it. **Focus code** and **Show all** do what they say.
+- **Change map** shows where the edits are. Bigger tile, more changed lines. Open folders, focus on one part of the repo, or jump straight to a file. Large PRs open with smart clusters that skip huge wrapper folders; you can also pick the folder depth. It groups by path; it isn’t a dependency graph.
 - **Exclude comment-only lines** adjusts the counts, percentages, map, and copied report. Inline code still counts.
 - **Unreviewed only** skips files you’ve marked as viewed. GitHub has to load a file’s viewed control before we know its state.
 - **Per-file controls** under **⋯** let you override a filter, see why a file got its category, or fix that category for the repo.
@@ -42,7 +43,7 @@ If the PR has a Language **PR Impact Map** comment, its summary shows up too. Co
 
 ## The annoying GitHub bits
 
-The extension downloads the PR diff so counts don’t grow every time you scroll. Commit ranges work too. If the diff is unavailable, incomplete, bigger than 20 MB, or uses an unsupported comparison such as **Hide whitespace**, the panel says the counts only cover loaded files. Cached totals are reused only when both the head and base revisions match.
+The extension downloads the PR diff so counts don’t grow every time you scroll. Commit ranges work too. If the diff is unavailable, incomplete, bigger than 20 MB, or uses an unsupported comparison such as **Hide whitespace**, the panel says the counts only cover loaded files. Missing line counts aren’t zero: categories and the map fall back to file counts, with a label saying so. **Retry full counts** tries the download again. The conversation page uses GitHub’s own totals while the breakdown loads. Cached totals are reused only when both the head and base revisions match.
 
 In GitHub’s `?mode=virtualization` view, filtered files keep a compact header. GitHub owns the row heights; fighting its scroll calculations causes flicker and jumping. We use its native collapse controls and track files by path as GitHub recycles the DOM.
 
@@ -94,7 +95,7 @@ Useful pages:
 - [Screenshots](http://127.0.0.1:4173/screenshots/)
 - [Visual comparisons](http://127.0.0.1:4173/visual/)
 
-The toolbar switches themes and GitHub layouts, adds 250 files, remounts files, and replaces headers. Add `?scenario=partial` to exercise a failed inventory download. `PRIX_PORT` changes the port.
+The toolbar switches themes and GitHub layouts, adds 250 files, remounts files, and replaces headers. Add `?scenario=partial` to exercise a failed inventory download. `?scenario=unmeasured` renders loading skeletons with no file statistics. `PRIX_PORT` changes the port.
 
 ### Keep it working
 
@@ -151,3 +152,7 @@ localStorage.setItem('prix-disabled', '1');
 Remove that key and reload to bring it back. Logs start with `[PR Impact]`; include those and any React errors in a bug report.
 
 Built with WXT, TypeScript, dom-chef, picomatch, and YAML. Playwright handles the browser tests. No UI framework shipped to GitHub.
+
+## Local AI?
+
+Investigated it. Browser-local search, questions about a diff, and a small review look doable. Nothing downloads or runs yet. The [investigation](docs/browser-ai.md) covers models, sizes, architecture, and what we need to measure before shipping it.

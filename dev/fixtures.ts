@@ -118,7 +118,7 @@ function render(): void {
     <nav aria-label="Repository"><ul class="fixture-repo-nav"><li><a href="#">Code</a></li><li><a href="#">Issues <span class="Counter">12</span></a></li><li><a id="pull-requests-tab" class="selected" href="/acme/review-kit/pulls"><span data-content="Pull requests">Pull requests</span><span class="Counter">8</span></a></li><li><a href="#">Actions</a></li></ul></nav>
     <main><div class="fixture-page">
     <div class="fixture-pr-heading"><div class="fixture-eyebrow">PULL REQUEST</div><h1>Make every review count <span>#42</span></h1><p><span class="fixture-open">⤴ Open</span> <strong>alex</strong> wants to merge 4 commits into <code>main</code> from <code>feature/review-focus</code></p></div>
-    <nav class="fixture-pr-tabs" aria-label="Pull request navigation"><a href="/acme/review-kit/pull/42">Conversation <span>3</span></a><a href="/acme/review-kit/pull/42/commits">Commits <span>4</span></a><a class="selected" href="${isOverview() ? '/acme/review-kit/pull/42/changes' : location.pathname}">Files changed <span>${files.length}</span></a></nav>
+    <nav class="fixture-pr-tabs" aria-label="Pull request navigation"><a href="/acme/review-kit/pull/42">Conversation <span>3</span></a><a href="/acme/review-kit/pull/42/commits">Commits <span>4</span></a><a class="selected" href="${isOverview() ? '/acme/review-kit/pull/42/changes' : location.pathname}">Files changed <span>${files.length}</span></a>${isOverview() ? `<span class="sr-only" hidden>Lines changed: ${files.reduce((sum, file) => sum + file.added, 0)} additions &amp; ${files.reduce((sum, file) => sum + file.removed, 0)} deletions</span>` : ''}</nav>
     ${
       isOverview()
         ? '<section class="fixture-conversation"><h2>Conversation</h2><article><strong>alex</strong><p>This change improves the review experience. The discussion and comments stay here.</p></article><aside>Reviewers · Labels · Milestone</aside></section>'
@@ -131,6 +131,12 @@ function render(): void {
     layout.style.display = 'flex';
     layout.style.flexWrap = 'wrap';
     for (const child of layout.children) (child as HTMLElement).style.flex = '0 0 100%';
+  }
+  if (new URLSearchParams(location.search).get('scenario') === 'unmeasured') {
+    for (const file of document.querySelectorAll('.fixture-file')) {
+      file.setAttribute('aria-label', `Loading ${file.getAttribute('data-tagsearch-path')}`);
+      file.replaceChildren();
+    }
   }
   if (isVirtual()) mountVirtualFixture();
 }

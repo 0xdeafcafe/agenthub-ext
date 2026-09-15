@@ -779,3 +779,109 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   background: var(--bgColor-accent-emphasis, #0969da);
   color: var(--fgColor-onEmphasis, #ffffff);
 }
+
+/* Conversation summary joins the PR tabs instead of floating in another card. */
+.prix-bar.prix-overview {
+  width: 100%;
+  flex: 0 0 100%;
+  grid-column: 1 / -1;
+  margin: 0 0 20px;
+  padding: 14px 0 0;
+  border: 0;
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 0;
+  box-shadow: none;
+}
+.prix-overview-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 12px;
+}
+.prix-overview-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+.prix-overview .prix-totals {
+  font-size: 12px;
+}
+.prix-overview-stats {
+  display: flex;
+  gap: 6px;
+  font-weight: 600;
+}
+.prix-overview .prix-open-changes {
+  margin-left: auto;
+  font-size: 12px;
+}
+.prix-overview-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 10px;
+}
+.prix-overview-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-muted, #656d76);
+}
+.prix-overview-category strong {
+  color: var(--fgColor-default, #1f2328);
+  font-weight: 500;
+}
+.prix-overview-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.prix-overview .prix-coverage {
+  margin-top: 6px;
+}
+.prix-overview .prix-change-map {
+  margin-top: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.prix-overview .prix-change-map > summary {
+  padding: 10px 0;
+}
+.prix-overview .prix-map-toolbar {
+  padding-left: 0;
+  padding-right: 0;
+}
+.prix-overview .prix-map-canvas {
+  margin: 0;
+}
+.prix-overview .prix-map-list {
+  margin-left: 0;
+  margin-right: 0;
+}
+@media (max-width: 480px) {
+  .prix-overview-header {
+    gap: 6px 10px;
+  }
+  .prix-overview-title {
+    width: 100%;
+  }
+  .prix-overview .prix-open-changes {
+    margin-left: 0;
+  }
+}
+
+.prix-overview .prix-added {
+  color: var(--fgColor-success, #1a7f37);
+}
+.prix-overview .prix-removed {
+  color: var(--fgColor-danger, #d1242f);
+}
+.prix-map-toolbar select {
+  font: inherit;
+  color: inherit;
+  background: var(--bgColor-default, #fff);
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 5px;
+  padding: 4px 7px;
+}

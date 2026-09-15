@@ -7,6 +7,8 @@ export interface MapFile {
   removed: number;
   viewed: boolean;
   state: DisplayState;
+  /** Missing statistics are different from a genuine zero-line change. */
+  linesKnown?: boolean;
 }
 export interface MapGroup {
   path: string;
@@ -23,18 +25,46 @@ export interface Tile {
   height: number;
 }
 
-export function groupChanges(files: MapFile[], directory = ''): MapGroup[] {
+export function groupChanges(files: MapFile[], directory = '', depth = 1): MapGroup[] {
+  if (depth === 0) {
+    // Peel away dominant wrapper directories (platform/app/src) until real
+    // clusters emerge, keeping the full relative path on every tile.
+    let groups = groupChanges(files, directory);
+    const useFiles = files.some((file) => file.linesKnown === false);
+    const total = groups.reduce((sum, group) => sum + group.weight, 0);
+    for (let step = 0; step < 12; step++) {
+      const largest = groups[0];
+      if (!largest?.directory || largest.files.length < 10 || largest.weight < total * 0.5) break;
+      const children = groupChanges(largest.files, largest.path).map((group) => ({
+        ...group,
+        name: group.path.slice(directory ? directory.length + 1 : 0),
+        weight: useFiles ? group.files.length : group.weight,
+      }));
+      if (groups.length - 1 + children.length > 60) break;
+      groups = [...groups.slice(1), ...children].sort(
+        (a, b) => b.weight - a.weight || a.path.localeCompare(b.path),
+      );
+    }
+    return groups;
+  }
   const prefix = directory ? `${directory}/` : '';
   const groups = new Map<string, MapGroup>();
+  const useFiles = files.some((file) => file.linesKnown === false);
   for (const file of files) {
     if (!file.path.startsWith(prefix)) continue;
     const relative = file.path.slice(prefix.length);
-    const slash = relative.indexOf('/');
-    const name = slash >= 0 ? relative.slice(0, slash) : relative;
+    const parts = relative.split('/');
+    const name = parts.slice(0, Math.max(1, depth)).join('/');
     const path = prefix + name;
-    const group = groups.get(path) ?? {path, name, directory: slash >= 0, files: [], weight: 0};
+    const group = groups.get(path) ?? {
+      path,
+      name,
+      directory: parts.length > depth,
+      files: [],
+      weight: 0,
+    };
     group.files.push(file);
-    group.weight += Math.max(1, file.added + file.removed);
+    group.weight += useFiles ? 1 : Math.max(1, file.added + file.removed);
     groups.set(path, group);
   }
   return [...groups.values()].sort((a, b) => b.weight - a.weight || a.path.localeCompare(b.path));
@@ -104,12 +134,18 @@ export class ChangeMap {
   #width = 0;
   #resize: ResizeObserver;
   readonly #onOpen: (path: string) => void;
+  readonly #reviewMode: boolean;
+  #depth = document.createElement('select');
+  #depthLabel = document.createElement('label');
+  #note = document.createElement('p');
 
   constructor(
     onOpen: (path: string) => void,
     onFocus: (directory: string) => void,
     signal: AbortSignal,
+    reviewMode = true,
   ) {
+    this.#reviewMode = reviewMode;
     this.#onOpen = onOpen;
     this.#onFocus = onFocus;
     this.element.className = 'prix-change-map';
@@ -131,16 +167,31 @@ export class ChangeMap {
     label.append(focused, ' Expanded files only');
     this.#focus = button('Focus this folder', () => onFocus(this.#directory));
     this.#focus.className = 'prix-map-focus';
-    toolbar.append(this.#breadcrumbs, label, this.#focus);
+    toolbar.append(this.#breadcrumbs);
+    if (reviewMode) toolbar.append(label, this.#focus);
+    this.#depth.setAttribute('aria-label', 'Map folder depth');
+    for (const [value, text] of [
+      ['0', 'Smart clusters'],
+      ['1', 'Top-level folders'],
+      ['2', 'Two folder levels'],
+      ['3', 'Three folder levels'],
+    ]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      this.#depth.append(option);
+    }
+    this.#depth.value = '0';
+    this.#depth.addEventListener('change', () => this.#render());
+    this.#depthLabel.append(this.#depth);
+    this.#depthLabel.hidden = true;
+    toolbar.append(this.#depthLabel);
     this.#canvas.className = 'prix-map-canvas';
     this.#canvas.setAttribute('aria-label', 'Changed files grouped by directory');
     this.#list.className = 'prix-map-list';
     this.#list.setAttribute('aria-label', 'Changes in this folder');
-    const note = document.createElement('p');
-    note.className = 'prix-map-note';
-    note.textContent =
-      'Area follows changed lines. Open a folder to explore it, or a file to review it. Binary and zero-line files keep a small tile.';
-    this.element.append(summary, toolbar, this.#canvas, this.#list, note);
+    this.#note.className = 'prix-map-note';
+    this.element.append(summary, toolbar, this.#canvas, this.#list, this.#note);
     this.element.addEventListener('toggle', () => {
       if (this.element.open) this.#render();
     });
@@ -172,11 +223,17 @@ export class ChangeMap {
     const files = this.#focused
       ? this.#files.filter((file) => file.state === 'visible')
       : this.#files;
-    const groups = groupChanges(files, this.#directory);
+    this.#depthLabel.hidden = files.length < 100;
+    const depth = this.#depthLabel.hidden ? 1 : Number(this.#depth.value);
+    const groups = groupChanges(files, this.#directory, depth);
+    const unknown = files.filter((file) => file.linesKnown === false).length;
+    this.#note.textContent = unknown
+      ? `Area follows file counts while line counts are unavailable for ${unknown} files. Open a folder to explore it, or a file to review it.`
+      : 'Area follows changed lines. Open a folder to explore it, or a file to review it. Binary and zero-line files keep a small tile.';
     this.#breadcrumbs.replaceChildren(
       button('All changes', () => {
         this.#directory = '';
-        this.#onFocus('');
+        if (this.#reviewMode) this.#onFocus('');
         this.#render();
       }),
     );
@@ -207,21 +264,23 @@ export class ChangeMap {
     for (const tile of layoutMap(groups, this.#width || 1000, 280)) {
       const {group} = tile;
       const lines = group.files.reduce((sum, file) => sum + file.added + file.removed, 0);
+      const hasUnknown = group.files.some((file) => file.linesKnown === false);
+      const lineLabel = hasUnknown ? 'line counts unavailable' : `${lines.toLocaleString()} lines`;
       const category = [...group.files].sort((a, b) => b.added + b.removed - a.added - a.removed)[0]
         .category;
       const element = button('', () => activate(group));
       element.className = 'prix-map-tile';
       element.style.cssText = `left:${tile.x}%;top:${tile.y}%;width:${tile.width}%;height:${tile.height}%;--prix-map-color:${color(category)}`;
       element.dataset.dimmed = String(group.files.every((file) => file.state !== 'visible'));
-      element.title = `${group.path}${group.directory ? '/' : ''} · ${group.files.length} files · ${lines.toLocaleString()} lines`;
+      element.title = `${group.path}${group.directory ? '/' : ''} · ${group.files.length} files · ${lineLabel}`;
       element.setAttribute(
         'aria-label',
-        `${group.directory ? 'Explore folder' : 'Open file'} ${group.path}, ${lines} changed lines`,
+        `${group.directory ? 'Explore folder' : 'Open file'} ${group.path}, ${hasUnknown ? 'line counts unavailable' : `${lines} changed lines`}`,
       );
       const title = document.createElement('strong');
       title.textContent = group.name + (group.directory ? '/' : '');
       const meta = document.createElement('span');
-      meta.textContent = `${lines.toLocaleString()} lines${group.directory ? ` · ${group.files.length} files` : ''}`;
+      meta.textContent = `${lineLabel}${group.directory ? ` · ${group.files.length} files` : ''}`;
       element.append(title, meta);
       this.#canvas.append(element);
       const row = button('', () => activate(group));
@@ -229,7 +288,7 @@ export class ChangeMap {
       const name = document.createElement('span');
       name.textContent = group.name + (group.directory ? '/' : '');
       const count = document.createElement('span');
-      count.textContent = `${lines.toLocaleString()} lines`;
+      count.textContent = lineLabel;
       row.append(name, count);
       this.#list.append(row);
     }
