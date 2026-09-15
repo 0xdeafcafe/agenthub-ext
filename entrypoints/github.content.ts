@@ -17,6 +17,7 @@ import {ReviewPreferences, loadSettings, parseSettings, SETTINGS_KEY} from '../l
 import {diffPathForPage} from '../lib/diff';
 import {fetchInventory} from '../lib/inventory';
 import {ReviewTools} from '../lib/review-tools';
+import {installAssistant} from '../lib/ai/bridge';
 import {initOverview} from '../lib/overview';
 import {injectFileControls} from '../lib/file-controls';
 import {
@@ -1089,6 +1090,7 @@ async function init(signal: AbortSignal): Promise<void> {
       });
   };
   loadInventory(inventoryRequest);
+  installAssistant(signal, openFile, () => directory, categoryOf);
 }
 
 function run(): void {

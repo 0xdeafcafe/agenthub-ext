@@ -34,7 +34,8 @@ const fixtureDiff =
 const html = (entry = 'preview') =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="user-login" content="alex"><title>PR Impact · Local playground</title><link rel="stylesheet" href="/${entry}.css"><script type="application/json">{"headSha":"abc123456789"}</script><script defer src="/${entry}.js"></script></head><body></body></html>`;
 
-export async function startPreview({port = 4173, watch = true} = {}) {
+export async function startPreview({port = 4173, watch = true, realAi = false} = {}) {
+  const previewDirectory = realAi ? '.output/preview-real-ai' : '.output/playground';
   const clients = new Set();
   let ready = false;
   const build = await context({
@@ -43,14 +44,23 @@ export async function startPreview({port = 4173, watch = true} = {}) {
       preview: 'dev/preview.ts',
       fixtures: 'dev/fixtures.ts',
       popup: 'entrypoints/popup/main.ts',
+      assistant: 'entrypoints/assistant/main.ts',
     },
-    outdir: '.output/preview',
+    outdir: previewDirectory,
     bundle: true,
     sourcemap: true,
     format: 'iife',
     target: 'es2022',
     alias: {'wxt/browser': resolve(root, 'dev/browser-mock.ts')},
     plugins: [
+      {
+        name: 'preview-model-worker',
+        setup(build) {
+          build.onResolve({filter: /ai\/create-worker$/}, () => ({
+            path: resolve(root, 'dev/ai-worker-factory.ts'),
+          }));
+        },
+      },
       {
         name: 'reload',
         setup(build) {
@@ -62,6 +72,17 @@ export async function startPreview({port = 4173, watch = true} = {}) {
       },
     ],
   });
+  const aiBuild = await context({
+    absWorkingDir: root,
+    entryPoints: [realAi ? 'lib/ai/worker.ts' : 'dev/ai-worker.ts'],
+    outfile: resolve(root, previewDirectory, 'ai-worker.js'),
+    external: ['url', 'module'],
+    bundle: true,
+    format: 'esm',
+    target: 'es2022',
+  });
+  await aiBuild.rebuild();
+  if (watch) await aiBuild.watch();
   await build.rebuild();
   if (watch) await build.watch();
   const handleRequest = async (request, response) => {
@@ -75,12 +96,32 @@ export async function startPreview({port = 4173, watch = true} = {}) {
         request.on('close', () => clients.delete(response));
       } else if (url.pathname === '/') {
         response.writeHead(302, {Location: '/acme/review-kit/pull/42/files'}).end();
-      } else if (/^\/(?:preview|fixtures|popup)\.(?:js|css)(?:\.map)?$/.test(url.pathname)) {
+      } else if (
+        /^\/(?:preview|fixtures|popup|assistant|ai-worker)\.(?:js|css)(?:\.map)?$/.test(
+          url.pathname,
+        )
+      ) {
         response.setHeader(
           'Content-Type',
           url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript',
         );
-        response.end(await readFile(resolve(root, '.output/preview', url.pathname.slice(1))));
+        response.end(await readFile(resolve(root, previewDirectory, url.pathname.slice(1))));
+      } else if (
+        /^\/ai\/(?:qwen-2b\.wasm|tokenizers\.js|litert\/[a-z_]+\.(?:wasm|js))$/.test(url.pathname)
+      ) {
+        response.setHeader(
+          'Content-Type',
+          url.pathname.endsWith('.wasm') ? 'application/wasm' : 'text/javascript',
+        );
+        response.end(await readFile(resolve(root, 'public', url.pathname.slice(1))));
+      } else if (url.pathname === '/assistant.html') {
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end(
+          (await readFile(resolve(root, 'entrypoints/assistant/index.html'), 'utf8')).replace(
+            '<script type="module" src="./main.ts"></script>',
+            '<link rel="stylesheet" href="/assistant.css"><script defer src="/assistant.js"></script>',
+          ),
+        );
       } else if (url.pathname === '/popup.html') {
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end(
@@ -158,13 +199,17 @@ export async function startPreview({port = 4173, watch = true} = {}) {
       ready = false;
       for (const client of clients) client.end();
       await build.dispose();
+      await aiBuild.dispose();
       await new Promise((resolve) => server.close(resolve));
     },
   };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const preview = await startPreview({port: Number(process.env.PRIX_PORT ?? 4173)});
+  const preview = await startPreview({
+    port: Number(process.env.PRIX_PORT ?? 4173),
+    realAi: process.env.PRIX_REAL_AI === '1',
+  });
   console.log(
     `PR Impact playground: ${preview.url}\nSource changes reload automatically. Screenshots: ${preview.url}/screenshots/`,
   );
