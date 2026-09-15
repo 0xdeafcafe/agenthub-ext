@@ -183,7 +183,11 @@ export async function fetchPullsCount(
     if (count !== null) {
       all[key] = {count, ts: Date.now()};
       // A failed cache write must not discard a count already fetched from GitHub.
-      await browser.storage.local.set({[COUNT_STORAGE_KEY]: all}).catch(() => {});
+      try {
+        await browser.storage.local.set({[COUNT_STORAGE_KEY]: all});
+      } catch {
+        // An invalidated extension can throw before returning a Promise.
+      }
     }
 
     return count;
