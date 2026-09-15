@@ -54,9 +54,16 @@ describe('ImpactBar markup', () => {
 
   it('renders header, track and legend rows in order', () => {
     const bar = new ImpactBar(['tests', 'code'], handlers);
-    const children = [...bar.element.children].map(el => el.className);
-    expect(children).toEqual(['prix-bar-header', 'prix-bar-track', 'prix-bar-legend', 'prix-chart']);
-    expect(bar.element.querySelector('.prix-bar-title')?.textContent).toBe('Impact');
+    const children = [...bar.element.children].map((el) => el.className);
+    expect(children).toEqual([
+      'prix-bar-header',
+      'prix-bar-track',
+      'prix-bar-legend',
+      'prix-bar-footer',
+      'prix-status',
+      'prix-chart',
+    ]);
+    expect(bar.element.querySelector('.prix-bar-title')?.textContent).toBe('Review focus');
     expect(bar.element.querySelector('.prix-bar-header .prix-totals')).not.toBeNull();
   });
 
@@ -110,7 +117,7 @@ describe('ImpactBar condensed diffstat', () => {
 
   it('shows original vs shown lines and proportion blocks when filtering', () => {
     const bar = new ImpactBar(['tests', 'code'], handlers);
-    bar.update(counts, name => (name === 'tests' ? 'hidden' : 'visible'));
+    bar.update(counts, (name) => (name === 'tests' ? 'hidden' : 'visible'));
     const diffstat = bar.element.querySelector<HTMLElement>('.prix-diffstat')!;
     expect(diffstat.hidden).toBe(false);
     expect(diffstat.querySelector('.prix-diffstat-orig')!.textContent).toBe('+7,015 −670');
@@ -123,7 +130,7 @@ describe('ImpactBar condensed diffstat', () => {
 
   it('treats collapsed categories as not shown', () => {
     const bar = new ImpactBar(['tests', 'code'], handlers);
-    bar.update(counts, name => (name === 'tests' ? 'collapsed' : 'visible'));
+    bar.update(counts, (name) => (name === 'tests' ? 'collapsed' : 'visible'));
     const diffstat = bar.element.querySelector<HTMLElement>('.prix-diffstat')!;
     expect(diffstat.hidden).toBe(false);
     expect(diffstat.querySelector('.prix-diffstat-added')!.textContent).toBe('+2,015');
@@ -131,7 +138,7 @@ describe('ImpactBar condensed diffstat', () => {
 
   it('hides again when everything is expanded, and when no lines were parsed', () => {
     const bar = new ImpactBar(['tests', 'code'], handlers);
-    bar.update(counts, name => (name === 'tests' ? 'hidden' : 'visible'));
+    bar.update(counts, (name) => (name === 'tests' ? 'hidden' : 'visible'));
     bar.update(counts, () => 'visible');
     expect(bar.element.querySelector<HTMLElement>('.prix-diffstat')!.hidden).toBe(true);
 
@@ -139,7 +146,7 @@ describe('ImpactBar condensed diffstat', () => {
       ['tests', {files: 2, added: 0, removed: 0, reviewed: 0}],
       ['code', {files: 3, added: 0, removed: 0, reviewed: 0}],
     ]);
-    bar.update(noLines, name => (name === 'tests' ? 'hidden' : 'visible'));
+    bar.update(noLines, (name) => (name === 'tests' ? 'hidden' : 'visible'));
     expect(bar.element.querySelector<HTMLElement>('.prix-diffstat')!.hidden).toBe(true);
   });
 });
@@ -284,7 +291,10 @@ describe('spanningBarPlacement', () => {
           <div id="diff-a"></div>
         </div>
       </main>`;
-    const placement = spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div'))!;
+    const placement = spanningBarPlacement(
+      document.querySelector('#diff-a')!,
+      document.createElement('div'),
+    )!;
     expect(placement.parent).toBe(document.querySelector('#page'));
     expect(placement.before).toBe(document.querySelector('#diff-a'));
   });
@@ -299,6 +309,8 @@ describe('spanningBarPlacement', () => {
           <a href="/o/r/pull/1/commits">Commits</a>
         </div>
       </main>`;
-    expect(spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div'))).toBeNull();
+    expect(
+      spanningBarPlacement(document.querySelector('#diff-a')!, document.createElement('div')),
+    ).toBeNull();
   });
 });

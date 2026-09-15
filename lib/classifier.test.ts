@@ -65,7 +65,9 @@ describe('rule precedence', () => {
   });
 
   it('supports arbitrary user-defined categories', () => {
-    const custom = compileRules([{name: 'sdk', globs: ['sdk/**', 'packages/sdk*/**'], action: 'hide'}]);
+    const custom = compileRules([
+      {name: 'sdk', globs: ['sdk/**', 'packages/sdk*/**'], action: 'hide'},
+    ]);
     expect(classify('sdk/client.go', custom)).toBe('sdk');
     expect(classify('packages/sdk-node/index.ts', custom)).toBe('sdk');
     expect(classify('app/main.ts', custom)).toBe('code');

@@ -67,11 +67,11 @@ export function aggregateFolderState(states: Array<DisplayState | null>): Displa
     return 'visible';
   }
 
-  if (states.every(state => state === 'hidden')) {
+  if (states.every((state) => state === 'hidden')) {
     return 'hidden';
   }
 
-  if (states.every(state => state !== 'visible')) {
+  if (states.every((state) => state !== 'visible')) {
     return 'collapsed';
   }
 
@@ -120,7 +120,10 @@ export function applyTreeRowState(row: Element, category: string, state: Display
  * whose rows carry full paths (React TreeView row ids), where folder rows
  * don't reliably nest their children in the DOM.
  */
-export function folderStatesByPath(folderPath: string, fileStates: ReadonlyMap<string, DisplayState>): DisplayState[] {
+export function folderStatesByPath(
+  folderPath: string,
+  fileStates: ReadonlyMap<string, DisplayState>,
+): DisplayState[] {
   const prefix = `${folderPath}/`;
   const states: DisplayState[] = [];
   for (const [path, state] of fileStates) {
@@ -170,7 +173,9 @@ export function folderKey(row: Element): string | null {
   let current: Element | null = row;
   while (current) {
     const label = current
-      .querySelector(':scope > [aria-expanded] .ActionList-item-label, :scope > [aria-expanded] [class*="label"]')
+      .querySelector(
+        ':scope > [aria-expanded] .ActionList-item-label, :scope > [aria-expanded] [class*="label"]',
+      )
       ?.textContent?.trim();
     if (!label) {
       return null;

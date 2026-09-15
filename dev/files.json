@@ -1,0 +1,42 @@
+[
+  {
+    "path": "src/review.ts",
+    "added": 128,
+    "removed": 34
+  },
+  {
+    "path": "src/components/review-panel.tsx",
+    "added": 80,
+    "removed": 12
+  },
+  {
+    "path": "src/hooks/use-review.ts",
+    "added": 41,
+    "removed": 9
+  },
+  {
+    "path": "tests/review.test.ts",
+    "added": 96,
+    "removed": 18
+  },
+  {
+    "path": "tests/review-panel.test.tsx",
+    "added": 64,
+    "removed": 7
+  },
+  {
+    "path": "specs/review.feature",
+    "added": 22,
+    "removed": 3
+  },
+  {
+    "path": "docs/reviewing.md",
+    "added": 63,
+    "removed": 8
+  },
+  {
+    "path": "package-lock.json",
+    "added": 2412,
+    "removed": 1301
+  }
+]

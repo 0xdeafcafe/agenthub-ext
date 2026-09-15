@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "singleQuote": true,
+  "bracketSpacing": false,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "node_modules/**",
+    ".output/**",
+    ".wxt/**",
+    "e2e/screenshots/**",
+    "e2e/baselines/**",
+    "package-lock.json",
+    "dist/**",
+    "safari-out/**"
+  ]
+}

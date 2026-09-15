@@ -1,10 +1,22 @@
 import './content.css';
 import {defineContentScript} from 'wxt/utils/define-content-script';
-import {classify, compileRules, type CompiledRule} from '../lib/classifier';
+import {classify, explainClassification, compileRules, type CompiledRule} from '../lib/classifier';
 import {fetchConfig} from '../lib/config';
-import {findBarPlacement, ImpactBar, PR_HEADER_PROBE, spanningBarPlacement, type CategoryCount} from '../lib/impact-bar';
+import {
+  findBarPlacement,
+  ImpactBar,
+  PR_HEADER_PROBE,
+  spanningBarPlacement,
+  type CategoryCount,
+} from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
 import {injectBadge} from '../lib/badges';
+import {FileIndex, adjustedLines} from '../lib/file-index';
+import {browser} from 'wxt/browser';
+import {ReviewPreferences, loadSettings, parseSettings, SETTINGS_KEY} from '../lib/preferences';
+import {fetchInventory} from '../lib/inventory';
+import {ReviewTools} from '../lib/review-tools';
+import {injectFileControls} from '../lib/file-controls';
 import {
   aggregateFolderState,
   applyFolderState,
@@ -19,32 +31,29 @@ import {
   treeRowPath,
 } from '../lib/file-tree';
 import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
-import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, readPrCounts, writePrCounts} from '../lib/pr-cache';
+import {
+  displayCounts,
+  extractHeadSha,
+  isCacheFresh,
+  prCacheKey,
+  readPrCounts,
+  writePrCounts,
+} from '../lib/pr-cache';
 import {observeSelector} from '../lib/observer';
 import {guarded, logError, rafThrottled} from '../lib/safe';
 import {defaultStateFor, CategoryStateStore, type DisplayState} from '../lib/state';
-import {adapterFor, containerSelector, headerSelector, isFileContainer, outerFileWrapper, type ChangedLines} from '../lib/views';
+import {
+  adapterFor,
+  containerSelector,
+  headerSelector,
+  isFileContainer,
+  outerFileWrapper,
+} from '../lib/views';
 
 // Matches /pull/:n/files and /pull/:n/changes (incl. /changes/<sha>..<sha>).
 // Local regex instead of github-url-detection: the installed version's
 // isPRFiles does not cover the /changes route.
 const PR_FILES_RE = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/(?:files|changes)(?:\/|$)/;
-
-function oneEvent(target: EventTarget, events: string[]): Promise<true> {
-  return new Promise(resolve => {
-    const handler = (): void => {
-      for (const event of events) {
-        target.removeEventListener(event, handler);
-      }
-
-      resolve(true);
-    };
-
-    for (const event of events) {
-      target.addEventListener(event, handler);
-    }
-  });
-}
 
 /**
  * The files toolbar, found as defensively as we can: the module-class
@@ -53,8 +62,9 @@ function oneEvent(target: EventTarget, events: string[]): Promise<true> {
  */
 function findFilesToolbar(): Element | null {
   const byClass =
-    document.querySelector('section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar') ??
-    document.querySelector('[class*="PullRequestFilesToolbar"]');
+    document.querySelector(
+      'section[class*="PullRequestFilesToolbar-module__toolbar"], .pr-toolbar',
+    ) ?? document.querySelector('[class*="PullRequestFilesToolbar"]');
   if (byClass) {
     return byClass;
   }
@@ -64,7 +74,10 @@ function findFilesToolbar(): Element | null {
       continue;
     }
 
-    if (/\d[\d,]*\s*\/\s*\d[\d,]*\s*viewed/.test(element.textContent ?? '') || element.textContent?.trim() === 'Submit review') {
+    if (
+      /\d[\d,]*\s*\/\s*\d[\d,]*\s*viewed/.test(element.textContent ?? '') ||
+      element.textContent?.trim() === 'Submit review'
+    ) {
       return element.closest('section, [class*="oolbar"]') ?? element.parentElement;
     }
   }
@@ -100,7 +113,9 @@ function describeAnchorChain(anchor: Element): string {
     const id = el.id ? `#${el.id}` : '';
     const cls = (el.getAttribute('class') ?? '').trim().split(/\s+/).slice(0, 2).join('.');
     const probe = hops > 0 && el.querySelector(PR_HEADER_PROBE) ? ' [HEADER-PROBE]' : '';
-    parts.push(`${el.tagName.toLowerCase()}${id}${cls ? `.${cls}` : ''} ${display}/${flexWrap}${probe}`);
+    parts.push(
+      `${el.tagName.toLowerCase()}${id}${cls ? `.${cls}` : ''} ${display}/${flexWrap}${probe}`,
+    );
     el = el.parentElement;
   }
 
@@ -130,7 +145,9 @@ function insertBar(bar: ImpactBar): void {
       console.warn(
         '[PR Impact]',
         'bar placement: nowhere safe to mount the bar on this page - skipping.',
-        anchor ? `anchor chain: ${describeAnchorChain(anchor)}` : 'no anchor found (no toolbar, no file container)',
+        anchor
+          ? `anchor chain: ${describeAnchorChain(anchor)}`
+          : 'no anchor found (no toolbar, no file container)',
       );
     }
 
@@ -186,9 +203,9 @@ function markHeaderChild(container: Element, header: Element): void {
 }
 
 /** GitHub's viewed/reviewed toggle state for a file container (logged-in only UI). */
-function reviewedOf(container: Element): boolean {
-  if (container.getAttribute('data-file-user-viewed') === 'true') {
-    return true;
+function reviewedOf(container: Element): boolean | null {
+  if (container.hasAttribute('data-file-user-viewed')) {
+    return container.getAttribute('data-file-user-viewed') === 'true';
   }
 
   const checkbox = container.querySelector<HTMLInputElement>('.js-reviewed-checkbox');
@@ -196,7 +213,8 @@ function reviewedOf(container: Element): boolean {
     return checkbox.checked;
   }
 
-  return container.querySelector('button[class*="MarkAsViewedButton"]')?.getAttribute('aria-pressed') === 'true';
+  const toggle = container.querySelector('button[class*="MarkAsViewedButton"]');
+  return toggle ? toggle.getAttribute('aria-pressed') === 'true' : null;
 }
 
 /** Kill switch: localStorage is reachable from the page console on github.com. */
@@ -214,6 +232,8 @@ async function init(signal: AbortSignal): Promise<void> {
     return;
   }
 
+  if (!(await loadSettings()).enabled || signal.aborted) return;
+
   // Fresh page, fresh licence to warn once about bar placement and paths
   barPlacementWarned = false;
   pathExtractionWarned = false;
@@ -229,7 +249,7 @@ async function init(signal: AbortSignal): Promise<void> {
   ensureMyPrsTab();
   // The nav mounts late and gets re-rendered by turbo/React partials, and a
   // seen-once observer misses losses that don't produce a fresh PR tab node -
-  // enforce the tab invariant on every mutation batch for the page's lifetime
+  // enforce the tab invariant on relevant nav mutations for the page's lifetime
   // (converges to zero DOM writes when the invariant holds).
   watchMyPrsTab(signal);
 
@@ -239,46 +259,78 @@ async function init(signal: AbortSignal): Promise<void> {
   }
 
   const [, owner, repo, prNumber] = match;
-  const config = await fetchConfig(owner, repo);
+  const repoKey = `${owner}/${repo}`;
+  const store = new CategoryStateStore(repoKey);
+  const preferences = new ReviewPreferences(repoKey);
+  const [config] = await Promise.all([
+    fetchConfig(owner, repo),
+    store.load(),
+    preferences.load(signal),
+  ]);
+  if (!signal.aborted) store.watch(signal);
   const rules: CompiledRule[] = compileRules(config.rules);
   if (signal.aborted) {
     return;
   }
 
   // Bar lists categories in config order, then the implicit `code` category.
-  const categories = [...rules.map(rule => rule.name), 'code'];
-  const store = new CategoryStateStore();
-  await store.load();
-  if (signal.aborted) {
-    return;
-  }
+  const categories = [...new Set([...rules.map((rule) => rule.name), 'code'])];
 
   const stateOf = (category: string): DisplayState =>
-    store.get(category, defaultStateFor(category, rules, config.defaultView));
+    store.get(
+      category,
+      preferences.global.defaultStates[category] ??
+        defaultStateFor(category, rules, config.defaultView),
+    );
 
   // Per-PR aggregate cache: seed the bar's display from the last visit
   // (same head SHA, or no SHA to compare against) so a virtualised PR
   // doesn't start at 0 and grow as you scroll. Live counts take over once
   // they cover at least as many files; the two are never summed.
-  const cacheKey = prCacheKey(owner, repo, prNumber);
+  // Range/config changes describe a different set of files and categories.
+  const cacheBase = `${prCacheKey(owner, repo, prNumber)}:${location.pathname.split('/').slice(6).join('/')}:${location.search}:${JSON.stringify(config)}`;
+  const cacheKey = (): string =>
+    `${cacheBase}:${JSON.stringify(Object.entries(preferences.repo.classifications).sort(([a], [b]) => a.localeCompare(b)))}`;
+  const seedKey = cacheKey();
   const pageSha = extractHeadSha(document);
-  const cacheEntry = await readPrCounts(cacheKey);
+  const cacheEntry = await readPrCounts(seedKey);
   const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha) ? cacheEntry : null;
   if (signal.aborted) {
     return;
   }
 
-  const counts = new Map<string, CategoryCount>();
-  const processed: Array<{container: Element; category: string; viewed: boolean; lines: ChangedLines | null}> = [];
-  const processedById = new Map<string, {container: Element; category: string}>();
-  const treeFileRows = new Set<Element>(); // every file row seen this page
+  const categoryOf = (path: string): string => {
+    const override = preferences.repo.classifications[path];
+    return override && categories.includes(override) ? override : classify(path, rules);
+  };
+  const overrides = new Map<string, DisplayState>();
+  let directory = '';
+  let inventoryPaths: Set<string> | null = null;
+  let coverage = 'Loading full PR inventory…';
+  let pendingReveal: string | null = null;
+  const index = new FileIndex();
+  const effectiveState = (path: string, category = categoryOf(path)): DisplayState => {
+    if (directory && !path.startsWith(`${directory}/`)) return 'hidden';
+    const override = overrides.get(path);
+    if (override) return override;
+    if (preferences.unreviewed && index.files.get(path)?.viewed) return 'hidden';
+    return stateOf(category);
+  };
+  const counts = index.counts;
+  const processed = new WeakMap<Element, {path: string; category: string}>();
+  const processedById = new Map<string, {category: string}>();
   let impactMap: ImpactMap | null = seed?.impactMap ?? null;
+  let lastJump: {target: Element; scrollY: number} | null = null;
 
   const jump = (direction: 1 | -1): void => {
-    const jumpable = new Set(
-      processed.filter(entry => stateOf(entry.category) !== 'hidden').map(entry => entry.container),
-    );
-    const containers = [...document.querySelectorAll(containerSelector)].filter(el => jumpable.has(el));
+    const containers = [...document.querySelectorAll(containerSelector)].filter((el) => {
+      const entry = processed.get(el);
+      return (
+        entry &&
+        effectiveState(entry.path, entry.category) !== 'hidden' &&
+        (!preferences.unreviewed || !index.files.get(entry.path)?.viewed)
+      );
+    });
     if (containers.length === 0) {
       return;
     }
@@ -287,7 +339,16 @@ async function init(signal: AbortSignal): Promise<void> {
     // file in the requested direction (clamped, no wrap). Threshold 80px:
     // GitHub gives containers ~60px scroll-margin-top, so after a jump the
     // current file's top sits at ~60, and collapsed headers are ~45px tall.
-    const currentIndex = containers.findLastIndex(el => el.getBoundingClientRect().top <= 80);
+    // At the bottom of a short/collapsed diff the browser cannot place the
+    // target at the viewport top. Retain our target until the user scrolls.
+    const previousIndex =
+      lastJump && Math.abs(window.scrollY - lastJump.scrollY) < 2
+        ? containers.indexOf(lastJump.target)
+        : -1;
+    const currentIndex =
+      previousIndex >= 0
+        ? previousIndex
+        : containers.findLastIndex((el) => el.getBoundingClientRect().top <= 80);
     const targetIndex = Math.min(Math.max(currentIndex + direction, 0), containers.length - 1);
     if (targetIndex === currentIndex) {
       return;
@@ -295,6 +356,7 @@ async function init(signal: AbortSignal): Promise<void> {
 
     const target = containers[targetIndex];
     target.scrollIntoView({block: 'start'});
+    lastJump = {target, scrollY: window.scrollY};
     for (const el of containers) {
       el.classList.remove('prix-flash');
     }
@@ -305,16 +367,17 @@ async function init(signal: AbortSignal): Promise<void> {
 
   const copyReport = async (): Promise<void> => {
     let rows: Array<{name: string; files: number; added: number; removed: number; share: number}>;
-    if (impactMap) {
+    if (impactMap && !preferences.excludeComments) {
       rows = impactMap.categories;
     } else {
       let totalLines = 0;
-      for (const count of counts.values()) {
+      const reportCounts = Object.fromEntries(panelCounts());
+      for (const count of Object.values(reportCounts)) {
         totalLines += count.added + count.removed;
       }
 
-      rows = categories.map(name => {
-        const count = counts.get(name) ?? {files: 0, added: 0, removed: 0, reviewed: 0};
+      rows = categories.map((name) => {
+        const count = reportCounts[name] ?? {files: 0, added: 0, removed: 0, reviewed: 0};
         const lines = count.added + count.removed;
         return {
           name,
@@ -326,30 +389,35 @@ async function init(signal: AbortSignal): Promise<void> {
       });
     }
 
-    try {
-      await navigator.clipboard.writeText(buildMarkdownReport(rows));
-    } catch {
-      // Clipboard requires a focused document; nothing sensible to fall back to
-    }
+    await navigator.clipboard.writeText(buildMarkdownReport(rows));
   };
 
   const bar = new ImpactBar(categories, {
-    onCycle: category => {
+    onCycle: (category) => {
       store.cycle(category, stateOf(category));
     },
     onExpandAll: () => {
-      for (const category of categories) {
-        store.set(category, 'visible');
-      }
+      overrides.clear();
+      directory = '';
+      void preferences
+        .update({unreviewed: false})
+        .catch(() => reviewTools.announce('Couldn’t save this preference.'));
+      store.setMany(categories.map((category) => [category, 'visible']));
+      applyAll();
     },
     onCollapseAll: () => {
-      for (const category of categories) {
-        store.set(category, 'collapsed');
-      }
+      overrides.clear();
+      store.setMany(categories.map((category) => [category, 'collapsed']));
+      applyAll();
     },
-    onCopy: () => {
-      void copyReport();
+    onFocus: () => {
+      overrides.clear();
+      store.setMany(
+        categories.map((category) => [category, category === 'code' ? 'visible' : 'collapsed']),
+      );
+      applyAll();
     },
+    onCopy: copyReport,
     onJump: jump,
   });
   if (seed?.impactMap) {
@@ -360,7 +428,11 @@ async function init(signal: AbortSignal): Promise<void> {
   // (rather than raw live counts) means a half-mounted virtualised revisit
   // can never degrade the cache.
   const bestCounts = (): Record<string, CategoryCount> =>
-    displayCounts(seed?.counts ?? null, Object.fromEntries(counts));
+    inventoryPaths || seedKey !== cacheKey()
+      ? Object.fromEntries(counts)
+      : displayCounts(seed?.counts ?? null, Object.fromEntries(counts));
+  const panelCounts = (): Map<string, CategoryCount> =>
+    preferences.excludeComments ? index.countsFor(true) : new Map(Object.entries(bestCounts()));
 
   let lastPersist = 0;
   let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -376,7 +448,7 @@ async function init(signal: AbortSignal): Promise<void> {
     }
 
     lastPersist = Date.now();
-    void writePrCounts(cacheKey, {sha: pageSha, counts: best, impactMap, ts: lastPersist});
+    void writePrCounts(cacheKey(), {sha: pageSha, counts: best, impactMap, ts: lastPersist});
   };
   const schedulePersist = (): void => {
     const wait = 2000 - (Date.now() - lastPersist);
@@ -390,22 +462,127 @@ async function init(signal: AbortSignal): Promise<void> {
   window.addEventListener('pagehide', persist, {signal});
   document.addEventListener('turbo:before-fetch-request', persist, {signal});
 
+  const reviewTools = new ReviewTools(
+    {
+      unreviewed: (value) => {
+        void preferences
+          .update({unreviewed: value})
+          .catch(() => reviewTools.announce('Couldn’t save this preference.'));
+      },
+      comments: (value) => {
+        void preferences
+          .update({excludeComments: value})
+          .catch(() => reviewTools.announce('Couldn’t save this preference.'));
+      },
+      clearOverrides: () => {
+        overrides.clear();
+        applyAll();
+      },
+      focusDirectory: (path) => {
+        directory = path;
+        applyAll();
+      },
+      openFile: (path) => openFile(path),
+      savePreset: async (name) => {
+        const existing = preferences.repo.presets.filter((preset) => preset.name !== name);
+        if (existing.length >= 20)
+          throw new Error('You can save 20 views per repository. Delete a view first.');
+        await preferences.update({
+          presets: [
+            ...existing,
+            {
+              name,
+              states: Object.fromEntries(
+                categories.map((category) => [category, stateOf(category)]),
+              ),
+              unreviewed: preferences.unreviewed,
+              excludeComments: preferences.excludeComments,
+              directory,
+            },
+          ],
+        });
+      },
+      applyPreset: (name) => {
+        const preset = preferences.repo.presets.find((preset) => preset.name === name);
+        if (!preset) return;
+        overrides.clear();
+        directory = preset.directory;
+        store.setMany(
+          categories.map((category) => [category, preset.states[category] ?? stateOf(category)]),
+        );
+        void preferences
+          .update({unreviewed: preset.unreviewed, excludeComments: preset.excludeComments})
+          .catch(() => reviewTools.announce('Couldn’t save this preference.'));
+        applyAll();
+      },
+      deletePreset: async (name) => {
+        await preferences.update({
+          presets: preferences.repo.presets.filter((preset) => preset.name !== name),
+        });
+      },
+    },
+    signal,
+    repoKey,
+  );
+  bar.element.querySelector('.prix-bar-footer')!.before(reviewTools.element);
   const refreshBar = rafThrottled(() => {
-    bar.update(new Map(Object.entries(bestCounts())), stateOf);
+    const shown = index.countsFor(
+      preferences.excludeComments,
+      (path) => effectiveState(path) === 'visible',
+    );
+    bar.update(panelCounts(), stateOf, shown);
+    bar.setImpactMap(preferences.excludeComments ? null : impactMap);
+    const commentCount = preferences.excludeComments
+      ? [...index.files.values()].reduce(
+          (sum, file) =>
+            sum + (file.inventory?.commentAdded ?? 0) + (file.inventory?.commentRemoved ?? 0),
+          0,
+        )
+      : 0;
+    reviewTools.update({
+      unreviewed: preferences.unreviewed,
+      excludeComments: preferences.excludeComments,
+      overrides: overrides.size,
+      directory,
+      presets: preferences.repo.presets,
+      coverage:
+        coverage +
+        (preferences.excludeComments
+          ? inventoryPaths
+            ? ` · ${commentCount.toLocaleString()} comment-only lines excluded`
+            : ' · comment counts unavailable for unloaded diffs'
+          : ''),
+      files: [...index.files].map(([path, file]) => ({
+        path,
+        category: file.category,
+        ...adjustedLines(file, preferences.excludeComments),
+        viewed: file.viewed,
+        state: effectiveState(path),
+      })),
+    });
     schedulePersist();
-  });
+  }, signal);
+  signal.addEventListener(
+    'abort',
+    () => {
+      persist();
+      bar.destroy();
+    },
+    {once: true},
+  );
 
   // Language "PR Impact Map" from the conversation page, when the bot posted one
-  void fetchImpactMap(owner, repo, prNumber)
+  void fetchImpactMap(owner, repo, prNumber, pageSha)
     .then(
-      guarded('impact-map', map => {
-        if (!signal.aborted && map) {
+      guarded('impact-map', (map) => {
+        if (!signal.aborted) {
           impactMap = map;
-          bar.setImpactMap(map);
+          bar.setImpactMap(preferences.excludeComments ? null : map);
+          schedulePersist();
         }
       }),
     )
-    .catch(error => {
+    .catch((error) => {
       logError('impact-map', error);
     });
 
@@ -415,7 +592,7 @@ async function init(signal: AbortSignal): Promise<void> {
   const stateOfTreeRow = (row: Element): DisplayState | null => {
     const path = treeRowPath(row);
     if (path) {
-      return stateOf(classify(path, rules));
+      return effectiveState(path);
     }
 
     const id = treeRowContainerId(row);
@@ -426,13 +603,13 @@ async function init(signal: AbortSignal): Promise<void> {
   const applyTreeRow = (row: Element): void => {
     const path = treeRowPath(row);
     const category = path
-      ? classify(path, rules)
+      ? categoryOf(path)
       : processedById.get(treeRowContainerId(row) ?? '')?.category;
     if (!category) {
       return;
     }
 
-    const state = stateOf(category);
+    const state = path ? effectiveState(path, category) : stateOf(category);
     if (path) {
       fileRowStates.set(path, state);
     }
@@ -463,7 +640,7 @@ async function init(signal: AbortSignal): Promise<void> {
       applyFolderState(row, state);
       maybeAutoCollapseFolder(row, state, userToggledFolders, autoCollapsedFolders);
     }
-  });
+  }, signal);
 
   // A folder the user has opened or closed by hand is never auto-collapsed
   document.addEventListener(
@@ -483,32 +660,108 @@ async function init(signal: AbortSignal): Promise<void> {
     {signal},
   );
 
-  store.subscribe(category => {
-    const state = stateOf(category);
-    for (const entry of processed) {
-      if (entry.category === category) {
-        applyState(entry.container, state);
-      }
+  const applyAll = (): void => {
+    for (const [path, file] of index.files) {
+      const category = categoryOf(path);
+      if (category !== file.category) index.update(path, category, null, null);
     }
-
-    for (const row of treeFileRows) {
-      applyTreeRow(row);
+    for (const container of document.querySelectorAll(containerSelector)) {
+      const entry = processed.get(container);
+      if (!entry) continue;
+      entry.category = categoryOf(entry.path);
+      applyState(container, effectiveState(entry.path, entry.category));
+      const header = adapterFor(container)?.getHeader(container);
+      if (header) decorateHeader(header, entry.path, entry.category);
     }
-
+    for (const row of document.querySelectorAll(TREE_ROW_SELECTOR))
+      if (!isFolderRow(row)) applyTreeRow(row);
     recomputeFolderStates();
     refreshBar();
-  });
+  };
+  store.subscribe(applyAll);
+  preferences.subscribe(applyAll);
+
+  const decorateHeader = (header: Element, path: string, category: string): void => {
+    injectBadge(header, category);
+    injectFileControls(header, {
+      category,
+      categories,
+      explanation: explainClassification(path, rules, preferences.repo.classifications[path]),
+      overriddenCategory: preferences.repo.classifications[path],
+      override: overrides.get(path),
+      state: effectiveState(path, category),
+      onState: (state) => {
+        if (state) overrides.set(path, state);
+        else overrides.delete(path);
+        applyAll();
+      },
+      onCategory: (category) => {
+        const classifications = {...preferences.repo.classifications};
+        if (category) classifications[path] = category;
+        else delete classifications[path];
+        void preferences
+          .update({classifications})
+          .catch(() => reviewTools.announce('Couldn’t save the category correction.'));
+      },
+    });
+  };
+  const openFile = (path: string): void => {
+    if (directory && !path.startsWith(`${directory}/`)) directory = '';
+    overrides.set(path, 'visible');
+    applyAll();
+    const container = [...document.querySelectorAll(containerSelector)].find(
+      (element) => processed.get(element)?.path === path,
+    );
+    if (container) {
+      container.scrollIntoView({block: 'start'});
+      container.classList.add('prix-flash');
+      lastJump = {target: container, scrollY: window.scrollY};
+      pendingReveal = null;
+    } else {
+      pendingReveal = path;
+      const row = [...document.querySelectorAll(TREE_ROW_SELECTOR)].find(
+        (row) => treeRowPath(row) === path,
+      );
+      row?.querySelector<HTMLElement>('a[href^="#diff-"]')?.click();
+      reviewTools.announce(
+        `Selected ${path}. If it hasn’t loaded yet, use GitHub’s file tree or scroll to bring it into view.`,
+      );
+    }
+  };
+  document.addEventListener(
+    'click',
+    (event) => {
+      const row = (event.target as Element).closest?.(TREE_ROW_SELECTOR);
+      const path = row && !isFolderRow(row) ? treeRowPath(row) : null;
+      if (path && effectiveState(path) !== 'visible') {
+        overrides.set(path, 'visible');
+        applyAll();
+      }
+    },
+    {signal},
+  );
 
   // Shift+J/K jumps between visible files. GitHub binds no j/k variants on
   // the files page (checked: only g-c/g-i/g-p/g-a/g-s/t/c/i/a), so no conflict.
   document.addEventListener(
     'keydown',
     guarded('keydown', (event: KeyboardEvent) => {
-      if ((event.key !== 'J' && event.key !== 'K') || event.metaKey || event.ctrlKey || event.altKey) {
+      if (
+        !event.shiftKey ||
+        event.defaultPrevented ||
+        (event.key !== 'J' && event.key !== 'K') ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
         return;
       }
 
-      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) {
+      if (
+        (event.target as HTMLElement).closest(
+          'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]',
+        )
+      ) {
         return;
       }
 
@@ -518,34 +771,40 @@ async function init(signal: AbortSignal): Promise<void> {
     {signal},
   );
 
-  // Reviewed toggles update via ajax after the click - re-read shortly after
+  // Read the actual reviewed state, including async React updates, without a
+  // fixed delay that can race the network or outlive navigation.
+  const updateReviewed = (container: Element): void => {
+    const entry = processed.get(container);
+    if (!entry) return;
+    const record = index.files.get(entry.path)!;
+    const viewed = reviewedOf(container);
+    if (viewed !== null && viewed !== record.viewed) {
+      index.update(entry.path, entry.category, null, viewed);
+      applyAll();
+    }
+  };
   document.addEventListener(
-    'click',
-    guarded('reviewed-click', (event: MouseEvent) => {
-      const toggle = (event.target as Element).closest?.(
-        '.js-reviewed-checkbox, .js-reviewed-toggle, button[class*="MarkAsViewedButton"]',
-      );
-      const container = toggle?.closest(containerSelector);
-      const entry = processed.find(p => p.container === container);
-      if (!entry) {
-        return;
-      }
-
-      setTimeout(() => {
-        const now = reviewedOf(entry.container);
-        if (now !== entry.viewed) {
-          entry.viewed = now;
-          const count = counts.get(entry.category);
-          if (count) {
-            count.reviewed += now ? 1 : -1;
-          }
-
-          refreshBar();
-        }
-      }, 600);
+    'change',
+    guarded('reviewed-change', (event: Event) => {
+      const container = (event.target as Element).closest?.(containerSelector);
+      if (container) updateReviewed(container);
     }),
     {signal},
   );
+  const reviewedObserver = new MutationObserver((mutations) => {
+    const changed = new Set<Element>();
+    for (const mutation of mutations) {
+      const container = (mutation.target as Element).closest(containerSelector);
+      if (container) changed.add(container);
+    }
+    for (const container of changed) updateReviewed(container);
+  });
+  reviewedObserver.observe(document.documentElement, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-pressed', 'data-file-user-viewed', 'checked'],
+  });
+  signal.addEventListener('abort', () => reviewedObserver.disconnect(), {once: true});
 
   // (No separate toolbar watcher: the bar is inserted when the first file
   // container is processed - an unknown-DOM page must yield zero injections.)
@@ -553,18 +812,18 @@ async function init(signal: AbortSignal): Promise<void> {
   // Full per-file processing. Containers are often observed in their loading
   // skeleton (aria-label "Loading <path>", no header or stats mounted yet) -
   // the header observer below re-enters here once the real header exists.
-  // Idempotent via the processed list: a container is counted exactly once.
+  // Counts use file paths so virtualized remounts update the same record.
   const processContainer = (container: Element): void => {
     // Plausibility guard: never classify/state a page-level wrapper that
     // happens to match the prefix selector (contains real containers inside).
     // Expected on every page (diff-layout-component matches div[id^="diff-"]),
     // so this is a debug-level note, not an error.
     if (!isFileContainer(container)) {
-      console.debug('[PR Impact]', 'skipped implausible container', container.id || container.className);
-      return;
-    }
-
-    if (processed.some(entry => entry.container === container)) {
+      console.debug(
+        '[PR Impact]',
+        'skipped implausible container',
+        container.id || container.className,
+      );
       return;
     }
 
@@ -591,39 +850,43 @@ async function init(signal: AbortSignal): Promise<void> {
       markHeaderChild(container, header);
     }
 
-    const category = classify(path, rules);
+    const category = categoryOf(path);
     const lines = adapter.getChangedLines(container);
     const viewed = reviewedOf(container);
-    const count = counts.get(category) ?? {files: 0, added: 0, removed: 0, reviewed: 0};
-    count.files += 1;
-    count.added += lines?.added ?? 0;
-    count.removed += lines?.removed ?? 0;
-    if (viewed) {
-      count.reviewed += 1;
-    }
-
-    counts.set(category, count);
+    index.update(path, category, lines, viewed);
 
     if (header) {
-      injectBadge(header, category);
+      decorateHeader(header, path, category);
     }
 
-    processed.push({container, category, viewed, lines});
+    processed.set(container, {path, category});
     if (container.id) {
-      processedById.set(container.id, {container, category});
+      processedById.set(container.id, {category});
       // A tree row seen before its file mounted gets classified now
       const row =
         document.getElementById(`file-tree-item-${container.id}`) ??
-        [...treeFileRows].find(candidate => treeRowContainerId(candidate) === container.id);
+        document.getElementById(path) ??
+        [...document.querySelectorAll(TREE_ROW_SELECTOR)].find(
+          (candidate) => treeRowContainerId(candidate) === container.id,
+        );
       if (row) {
-        treeFileRows.add(row);
         applyTreeRow(row);
       }
 
       recomputeFolderStates();
     }
 
-    applyState(container, stateOf(category));
+    applyState(container, effectiveState(path, category));
+    if (inventoryPaths && !inventoryPaths.has(path)) {
+      inventoryPaths = null;
+      coverage = 'Files changed since inventory loaded · showing discovered files';
+    }
+    if (pendingReveal === path) {
+      pendingReveal = null;
+      requestAnimationFrame(() => {
+        if (!signal.aborted) openFile(path);
+      });
+    }
 
     insertBar(bar);
     refreshBar();
@@ -631,72 +894,114 @@ async function init(signal: AbortSignal): Promise<void> {
 
   observeSelector(containerSelector, processContainer, signal);
 
-  observeSelector(TREE_ROW_SELECTOR, row => {
-    if (isFolderRow(row)) {
+  observeSelector(
+    TREE_ROW_SELECTOR,
+    (row) => {
+      if (isFolderRow(row)) {
+        recomputeFolderStates();
+        return;
+      }
+
+      applyTreeRow(row);
       recomputeFolderStates();
-      return;
-    }
+    },
+    signal,
+  );
 
-    treeFileRows.add(row);
-    applyTreeRow(row);
-    recomputeFolderStates();
-  }, signal);
-
-  // React can re-render a file header (e.g. after the viewed toggle), wiping
-  // our badge and the .prix-header tag. Headers are observed separately from
-  // containers (whose data-prix-seen guard would otherwise block re-apply).
-  observeSelector(headerSelector, header => {
-    const container = header.closest(containerSelector);
-    if (!container?.hasAttribute('data-prix-seen')) {
-      return; // container not observed yet - its own pass handles the header
-    }
-
-    const entry = processed.find(p => p.container === container);
-    if (!entry) {
-      // Observed in its loading skeleton with no readable path - process
-      // properly now that the header exists.
-      processContainer(container);
-      return;
-    }
-
-    markHeaderChild(container, header);
-    injectBadge(header, entry.category);
-    applyState(container, stateOf(entry.category));
-
-    // A container processed from its loading skeleton contributed 0 lines -
-    // the per-file stats only exist once the header mounts.
-    if (entry.lines === null) {
-      const lines = adapterFor(container)?.getChangedLines(container) ?? null;
-      if (lines) {
-        entry.lines = lines;
-        const count = counts.get(entry.category);
-        if (count) {
-          count.added += lines.added;
-          count.removed += lines.removed;
-        }
-
+  // Headers can arrive after skeletons or replace a previously reviewed header.
+  observeSelector(
+    headerSelector,
+    (header) => {
+      const container = header.closest(containerSelector);
+      if (container) processContainer(container);
+    },
+    signal,
+  );
+  void fetchInventory(new URL(location.href), signal)
+    .then((result) => {
+      if (signal.aborted) return;
+      if (result.inventory?.complete) {
+        const paths = new Set(result.inventory.files.map((file) => file.path));
+        const consistent = [...index.files.keys()].every((path) => paths.has(path));
+        index.seed(result.inventory.files, categoryOf);
+        inventoryPaths = consistent ? paths : null;
+        coverage = consistent
+          ? `Complete PR inventory · ${paths.size} files`
+          : 'Diff and page differ · showing discovered files';
+        applyAll();
+      } else {
+        coverage = result.reason ?? 'Counts cover files loaded so far';
         refreshBar();
       }
-    }
-  }, signal);
+    })
+    .catch(() => {
+      if (!signal.aborted) {
+        coverage = 'Full diff unavailable · counts cover loaded files';
+        refreshBar();
+      }
+    });
 }
 
-async function run(): Promise<void> {
-  let controller = new AbortController();
-  const reset = (): void => {
-    controller.abort();
-    controller = new AbortController();
+function run(): void {
+  let controller: AbortController | null = null;
+  let currentUrl = '';
+  const stop = (): void => {
+    controller?.abort();
+    controller = null;
+    for (const element of document.querySelectorAll(
+      '.prix-collapsed, .prix-hidden, .prix-hidden-outer, .prix-collapsed-outer, .prix-header, .prix-flash, .prix-tree-collapsed, .prix-tree-hidden',
+    )) {
+      element.classList.remove(
+        'prix-collapsed',
+        'prix-hidden',
+        'prix-hidden-outer',
+        'prix-collapsed-outer',
+        'prix-header',
+        'prix-flash',
+        'prix-tree-collapsed',
+        'prix-tree-hidden',
+      );
+    }
+    for (const element of document.querySelectorAll(
+      '#prix-bar, .prix-badge, .prix-file-controls, .prix-tree-badge',
+    ))
+      element.remove();
+    for (const id of ['my-prs-repo-tab', 'review-requested-repo-tab'])
+      document.getElementById(id)?.closest('li')?.remove();
   };
-
-  // Tear down observers/listeners before Turbo swaps the page…
-  document.addEventListener('turbo:before-fetch-request', reset);
-  document.addEventListener('turbo:visit', reset);
-
-  init(controller.signal);
-  // …and re-init after every Turbo/React soft navigation.
-  while (await oneEvent(document, ['turbo:render', 'soft-nav:react-done'])) {
-    init(controller.signal);
-  }
+  const start = (): void => {
+    // Turbo can announce the same render more than once. Keep one live session.
+    // GitHub's file-tree anchors change only the hash. Those are review jumps,
+    // not page navigations, and must preserve per-file overrides and the queue.
+    const url = location.origin + location.pathname + location.search;
+    if (controller && currentUrl === url) return;
+    stop();
+    currentUrl = url;
+    controller = new AbortController();
+    void init(controller.signal).catch((error) => logError('init', error));
+  };
+  document.addEventListener('turbo:before-render', stop);
+  document.addEventListener('turbo:before-cache', stop);
+  document.addEventListener('turbo:render', start);
+  document.addEventListener('soft-nav:react-done', () => {
+    stop();
+    start();
+  });
+  window.addEventListener('popstate', start);
+  window.addEventListener('pagehide', stop);
+  window.addEventListener('pageshow', start);
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (
+      area === 'local' &&
+      changes[SETTINGS_KEY] &&
+      parseSettings(changes[SETTINGS_KEY].newValue).enabled !==
+        parseSettings(changes[SETTINGS_KEY].oldValue).enabled
+    ) {
+      stop();
+      start();
+    }
+  });
+  start();
 }
 
 export default defineContentScript({
@@ -710,6 +1015,6 @@ export default defineContentScript({
     }
 
     document.documentElement.setAttribute('data-prix-active', '');
-    void run();
+    run();
   },
 });

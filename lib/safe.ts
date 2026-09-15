@@ -13,7 +13,10 @@ export function logError(context: string, error: unknown): void {
   console.warn('[PR Impact]', context, error);
 }
 
-export function guarded<A extends unknown[]>(context: string, fn: (...args: A) => void): (...args: A) => void {
+export function guarded<A extends unknown[]>(
+  context: string,
+  fn: (...args: A) => void,
+): (...args: A) => void {
   return (...args: A) => {
     try {
       fn(...args);
@@ -24,16 +27,23 @@ export function guarded<A extends unknown[]>(context: string, fn: (...args: A) =
 }
 
 /** Coalesces repeated calls into at most one DOM write per animation frame. */
-export function rafThrottled(fn: () => void): () => void {
-  let scheduled = false;
+export function rafThrottled(fn: () => void, signal?: AbortSignal): () => void {
+  let frame: number | null = null;
+  signal?.addEventListener(
+    'abort',
+    () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = null;
+    },
+    {once: true},
+  );
   return () => {
-    if (scheduled) {
+    if (frame !== null || signal?.aborted) {
       return;
     }
 
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
+    frame = requestAnimationFrame(() => {
+      frame = null;
       try {
         fn();
       } catch (error) {

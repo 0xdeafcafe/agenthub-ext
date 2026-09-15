@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 # contents:write is needed for the release job (gh release create/upload)
@@ -20,8 +21,18 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run compile
-      - run: npm test
+      - run: npm run check
+      - run: npm run test:browser:install -- --with-deps
+      - run: npm run test:local
+      - run: npm run test:features
+      - run: npm run test:visual
+      - run: npm run test:extension
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-impact-local-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore
 
   chrome:
     needs: test

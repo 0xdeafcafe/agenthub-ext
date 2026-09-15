@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PR Impact settings</title>
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="settings-mark" aria-hidden="true">◈</span>
+        <div>
+          <h1>PR Impact</h1>
+          <p>A clearer path through every review.</p>
+        </div>
+      </header>
+      <form id="settings">
+        <label class="settings-enabled"
+          ><span
+            ><strong>Enable PR Impact</strong><small>Apply review controls on GitHub</small></span
+          ><input id="enabled" type="checkbox" role="switch"
+        /></label>
+        <section>
+          <h2>Default review view</h2>
+          <p>Repositories remember their own choices.</p>
+          <label class="settings-toggle"
+            ><input id="unreviewed" type="checkbox" /> Start with unreviewed files only</label
+          >
+          <label class="settings-toggle"
+            ><input id="exclude-comments" type="checkbox" /> Exclude comment-only lines from
+            totals</label
+          >
+          <div id="category-defaults"></div>
+        </section>
+      </form>
+      <section>
+        <h2 id="repository-title">Repository preferences</h2>
+        <p>Reset category choices, corrections, and saved views for the active repository.</p>
+        <button id="reset-repo" type="button" disabled>Reset this repository</button>
+      </section>
+      <footer>
+        <button id="reset-defaults" type="button">Restore default settings</button>
+        <p id="settings-status" role="status" aria-live="polite"></p>
+      </footer>
+    </main>
+  </body>
+</html>
