@@ -7,15 +7,20 @@ on:
   pull_request:
   workflow_dispatch:
 
-# contents:write is needed for the release job (gh release create/upload)
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,67 +36,45 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: pr-impact-local-screenshots
+          name: pr-impact-screenshots-${{ runner.os }}
           path: e2e/screenshots/
           if-no-files-found: ignore
 
-  chrome:
+  package:
     needs: test
+    strategy:
+      matrix:
+        browser: [chrome, firefox]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx wxt build
-      # Produces .output/agenthubext-<version>-chrome.zip (verified locally)
-      - run: npx wxt zip
-      # upload-artifact v4 skips hidden dirs like .output/ - stage via dist/
-      - run: mkdir -p dist && cp .output/agenthubext-*-chrome.zip dist/
+      - run: npm run package -- ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         with:
-          # This same zip works for Chrome, Arc, Edge and Brave
-          name: pr-impact-chrome-arc
-          path: dist/agenthubext-*-chrome.zip
-          if-no-files-found: error
-
-  firefox:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx wxt build -b firefox
-      # Produces .output/agenthubext-<version>-firefox.zip (verified locally;
-      # the -sources.zip sibling is only needed for AMO review, not uploaded)
-      - run: npx wxt zip -b firefox
-      # upload-artifact v4 skips hidden dirs like .output/ - stage via dist/
-      - run: mkdir -p dist && cp .output/agenthubext-*-firefox.zip dist/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pr-impact-firefox
-          path: dist/agenthubext-*-firefox.zip
+          name: pr-impact-${{ matrix.browser }}
+          path: dist/*.zip
           if-no-files-found: error
 
   safari:
     needs: test
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx wxt build
-      # NOTE: exercised only on CI - the converter ships with full Xcode,
-      # which macos runners have. --force/--no-open keep it non-interactive.
+      - run: npm run build
       - name: Convert to Safari Xcode project
         run: >-
           xcrun safari-web-extension-converter .output/chrome-mv3
@@ -104,85 +87,69 @@ jobs:
         run: zip -r "$GITHUB_WORKSPACE/pr-impact-safari-xcode.zip" "PR Impact"
       - uses: actions/upload-artifact@v4
         with:
-          # UNSIGNED Xcode project - must be built in Xcode with an Apple ID
-          name: pr-impact-safari-xcode-project
+          name: pr-impact-safari
           path: pr-impact-safari-xcode.zip
           if-no-files-found: error
 
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [chrome, firefox, safari]
+  publish:
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [package, safari]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: pr-impact-publish
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TAG: ${{ github.ref_name }}
+      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: pr-impact-chrome-arc
-          path: dist/chrome
+          name: pr-impact-chrome
+          path: release-assets
       - uses: actions/download-artifact@v4
         with:
           name: pr-impact-firefox
-          path: dist/firefox
+          path: release-assets
       - uses: actions/download-artifact@v4
         with:
-          name: pr-impact-safari-xcode-project
-          path: dist/safari
-      # Stable asset names make releases/latest/download/<name> URLs work
-      - name: Stage release assets
+          name: pr-impact-safari
+          path: release-assets
+      - name: Checksum the downloads
+        working-directory: release-assets
+        run: sha256sum *.zip > SHA256SUMS
+      - name: Publish versioned release or update main build
         run: |
-          mkdir -p release-assets
-          cp dist/chrome/agenthubext-*-chrome.zip release-assets/pr-impact-chrome-mv3.zip
-          cp dist/firefox/agenthubext-*-firefox.zip release-assets/pr-impact-firefox-mv2.zip
-          cp dist/safari/pr-impact-safari-xcode.zip release-assets/pr-impact-safari-xcode.zip
-          ls -la release-assets
-      - name: Create or update release
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release-assets/* --clobber
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+            else
+              gh release create "$GITHUB_REF_NAME" release-assets/* \
+                --verify-tag --generate-notes --latest
+            fi
           else
-            gh release create "$TAG" release-assets/* --generate-notes --latest
-          fi
+            # An older run must never overwrite downloads from a newer main commit.
+            MAIN_SHA=$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)
+            if [[ "$MAIN_SHA" != "$GITHUB_SHA" ]]; then
+              echo 'Main has moved on; skipping this rolling release.'
+              exit 0
+            fi
+            cat > /tmp/release-notes.md <<NOTES
+          Built from main at $GITHUB_SHA after Linux and macOS checks passed.
 
-  # Rolling release: the README's releases/latest/download/... links 404
-  # unless some full release is marked latest, and tags don't happen often.
-  # So every main push republishes a `rolling` release with the same stable
-  # asset names. A versioned tag release takes over "latest" when it lands;
-  # the next main push re-marks rolling - both link shapes keep working.
-  rolling-release:
-    if: github.ref == 'refs/heads/main'
-    needs: [chrome, firefox, safari]
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      # gh release create --target resolves the ref through local git
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: pr-impact-chrome-arc
-          path: dist/chrome
-      - uses: actions/download-artifact@v4
-        with:
-          name: pr-impact-firefox
-          path: dist/firefox
-      - uses: actions/download-artifact@v4
-        with:
-          name: pr-impact-safari-xcode-project
-          path: dist/safari
-      - name: Stage release assets
-        run: |
-          mkdir -p release-assets
-          cp dist/chrome/agenthubext-*-chrome.zip release-assets/pr-impact-chrome-mv3.zip
-          cp dist/firefox/agenthubext-*-firefox.zip release-assets/pr-impact-firefox-mv2.zip
-          cp dist/safari/pr-impact-safari-xcode.zip release-assets/pr-impact-safari-xcode.zip
-          ls -la release-assets
-      - name: Republish the rolling release
-        run: |
-          gh release delete rolling --yes --cleanup-tag || true
-          gh release create rolling release-assets/* \
-            --target main \
-            --title "Latest main build" \
-            --notes "Rolling build of main at ${GITHUB_SHA::7}, rebuilt on every push. For Arc/Chrome/Edge/Brave use pr-impact-chrome-mv3.zip." \
-            --latest
+          Arc, Chrome, Edge, Brave: download pr-impact-chrome-mv3.zip, unzip it, and load the folder from your browser's extensions page with Developer mode enabled.
+          Firefox: temporary unsigned add-on. Safari: unsigned Xcode project.
+          NOTES
+            if gh release view rolling >/dev/null 2>&1; then
+              gh api --method PATCH "repos/$GH_REPO/git/refs/tags/rolling" \
+                -f sha="$GITHUB_SHA" -F force=true
+              gh release upload rolling release-assets/* --clobber
+              gh release edit rolling --title 'Latest main build' \
+                --notes-file /tmp/release-notes.md --prerelease --latest=false
+            else
+              gh release create rolling release-assets/* --target "$GITHUB_SHA" \
+                --title 'Latest main build' --notes-file /tmp/release-notes.md \
+                --prerelease --latest=false
+            fi
+          fi

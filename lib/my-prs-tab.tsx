@@ -171,7 +171,10 @@ export async function fetchPullsCount(
     // only trust the count with a real user-login and our filter intact.
     if (
       !extractUserLogin(html) ||
-      !extractSearchQuery(html)?.includes(`${def.qualifier}:${value}`)
+      !extractSearchQuery(html)
+        ?.toLowerCase()
+        .split(/\s+/)
+        .includes(`${def.qualifier}:${value}`.toLowerCase())
     ) {
       return null;
     }
@@ -179,7 +182,8 @@ export async function fetchPullsCount(
     const count = parseOpenPullsCount(html);
     if (count !== null) {
       all[key] = {count, ts: Date.now()};
-      await browser.storage.local.set({[COUNT_STORAGE_KEY]: all});
+      // A failed cache write must not discard a count already fetched from GitHub.
+      await browser.storage.local.set({[COUNT_STORAGE_KEY]: all}).catch(() => {});
     }
 
     return count;

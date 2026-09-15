@@ -1,8 +1,10 @@
 import {defineConfig} from 'wxt';
+import {versionForBuild} from './scripts/version.mjs';
 
 export default defineConfig({
   manifest: {
     name: 'PR Impact',
+    version: versionForBuild(),
     description:
       'Categorise and filter files on GitHub PR "Files changed" pages - collapse tests, hide generated code and lockfiles, focus on the code that matters.',
     permissions: ['storage'],

@@ -92,3 +92,10 @@ rename to new name.md
     expect(diffPathForPage(url('/acme/project/pull/42/changes/anything'))).toBeNull();
   });
 });
+
+it('does not count the unfiltered diff for whitespace-ignoring comparisons', () => {
+  expect(diffPathForPage(new URL('https://github.com/o/r/pull/42/files?w=1'))).toBeNull();
+  expect(
+    diffPathForPage(new URL('https://github.com/o/r/pull/42/changes?w=1&mode=virtualization')),
+  ).toBeNull();
+});

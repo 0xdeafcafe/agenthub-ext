@@ -2,3 +2,5 @@ node_modules/
 .output/
 .wxt/
 e2e/screenshots/
+dist/
+safari-out/
