@@ -31,7 +31,7 @@ export function isFileExpanded(button: HTMLButtonElement): boolean | null {
 
 /** Let GitHub update its own height model; never hide or resize a measured slot. */
 export class VirtualFiles {
-  #requests = new WeakMap<Element, {button: HTMLButtonElement; expanded: boolean}>();
+  #requests = new WeakMap<Element, boolean>();
   #original = new Map<Element, {expanded: boolean; requested: boolean}>();
 
   constructor(signal: AbortSignal) {
@@ -67,11 +67,13 @@ export class VirtualFiles {
       return;
     }
     const pending = this.#requests.get(container);
-    if (pending?.button === button && pending.expanded === expanded) return;
+    // React can replace the disclosure while its state update is still pending.
+    // The in-flight request belongs to the file, not that particular button.
+    if (pending === expanded) return;
     const original = this.#original.get(container) ?? {expanded: current, requested: expanded};
     original.requested = expanded;
     this.#original.set(container, original);
-    this.#requests.set(container, {button, expanded});
+    this.#requests.set(container, expanded);
     button.click();
   }
 
@@ -84,6 +86,6 @@ export class VirtualFiles {
     this.forget(container);
     const button = nativeFileToggle(container);
     // React may commit the user's click after our next animation frame.
-    if (button) this.#requests.set(container, {button, expanded});
+    if (button) this.#requests.set(container, expanded);
   }
 }
