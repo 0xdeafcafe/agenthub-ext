@@ -1,7 +1,67 @@
-import {describe, expect, it} from 'vitest';
-import {actionToState, cycleState, defaultStateFor, isDisplayState} from './state';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {
+  actionToState,
+  CategoryStateStore,
+  cycleState,
+  defaultStateFor,
+  isDisplayState,
+} from './state';
 import {compileRules} from './classifier';
 import {DEFAULT_CATEGORIES} from './config';
+
+const storage = vi.hoisted(() => ({
+  get: vi.fn<(key: string) => Promise<Record<string, unknown>>>(),
+  set: vi.fn<(values: Record<string, unknown>) => Promise<void>>().mockResolvedValue(undefined),
+}));
+vi.mock('wxt/browser', () => ({browser: {storage: {local: storage}}}));
+beforeEach(() => vi.clearAllMocks());
+
+describe('CategoryStateStore', () => {
+  it('applies a preset with one notification and one storage write', async () => {
+    const store = new CategoryStateStore();
+    const listener = vi.fn<(categories: ReadonlySet<string>) => void>();
+    store.subscribe(listener);
+    store.setMany([
+      ['code', 'visible'],
+      ['tests', 'collapsed'],
+      ['docs', 'hidden'],
+    ]);
+    await Promise.resolve();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect([...listener.mock.calls[0][0]]).toEqual(['code', 'tests', 'docs']);
+    expect(storage.set).toHaveBeenCalledExactlyOnceWith({
+      'prix:categoryStates': {code: 'visible', tests: 'collapsed', docs: 'hidden'},
+    });
+    store.set('tests', 'collapsed');
+    await Promise.resolve();
+    expect(storage.set).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads valid preferences and ignores malformed states', async () => {
+    storage.get.mockResolvedValueOnce({'prix:categoryStates': {code: 'hidden', docs: 'broken'}});
+    const store = new CategoryStateStore();
+    await store.load();
+    expect(store.get('code', 'visible')).toBe('hidden');
+    expect(store.get('docs', 'visible')).toBe('visible');
+  });
+
+  it('keeps filters usable if an extension reload invalidates storage', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      storage.set.mockImplementationOnce(() => {
+        throw new Error('Extension context invalidated');
+      });
+      const store = new CategoryStateStore();
+      store.set('tests', 'hidden');
+      await Promise.resolve();
+      expect(store.get('tests', 'visible')).toBe('hidden');
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
 
 describe('cycleState', () => {
   it('cycles visible → collapsed → hidden → visible', () => {

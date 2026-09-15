@@ -1,14 +1,15 @@
 // PR Impact - live smoke test against github.com (unauthenticated, public repos).
-// Uses Chrome for Testing from the Playwright cache (branded Chrome >= 137
-// ignores --load-extension; Arc refuses CDP launches). No browser downloads.
+// Uses managed Chromium from the Playwright cache or PRIX_BROWSER.
+// Install once with npm run test:browser:install.
 //
 // Run: npm run test:e2e   (requires `npm run build` first)
 
-import {mkdtempSync, mkdirSync} from 'node:fs';
+import {mkdtempSync, mkdirSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
+import {browserPath} from './browser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const extensionPath = path.join(root, '.output', 'chrome-mv3');
@@ -27,12 +28,9 @@ async function shot(page, name) {
   console.log(`  screenshot: e2e/screenshots/${name}`);
 }
 
-const CFT = path.join(
-  process.env.HOME,
-  'Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
-);
-const context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmpdir(), 'prix-profile-')), {
-  executablePath: CFT,
+const profile = mkdtempSync(path.join(tmpdir(), 'prix-profile-'));
+const context = await chromium.launchPersistentContext(profile, {
+  executablePath: browserPath({extension: true}),
   headless: false,
   args: [
     '--headless=new',
@@ -43,13 +41,15 @@ const context = await chromium.launchPersistentContext(mkdtempSync(path.join(tmp
 });
 
 try {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {origin: 'https://github.com'});
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: 'https://github.com',
+  });
   const page = context.pages()[0] ?? (await context.newPage());
   page.setDefaultTimeout(30_000);
 
   // Hardening: the extension must never log errors of its own
   const prixErrors = [];
-  page.on('console', msg => {
+  page.on('console', (msg) => {
     if (msg.type() === 'error' && msg.text().includes('[PR Impact]')) {
       prixErrors.push(msg.text());
     }
@@ -57,7 +57,9 @@ try {
 
   // ── 1. My PRs tab ────────────────────────────────────────────────────────
   console.log('\n== My PRs tab ==');
-  await page.goto('https://github.com/refined-github/refined-github', {waitUntil: 'domcontentloaded'});
+  await page.goto('https://github.com/refined-github/refined-github', {
+    waitUntil: 'domcontentloaded',
+  });
   await page.waitForSelector('a#pull-requests-tab, a#pull-requests-repo-tab');
 
   // This is also the extension-loaded check: only our content script adds this id.
@@ -66,7 +68,7 @@ try {
   const tabInfo = await page.evaluate(() => {
     const mine = document.getElementById('my-prs-repo-tab');
     const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-    const liOf = el => el?.closest('li');
+    const liOf = (el) => el?.closest('li');
     const counters = [...(mine?.querySelectorAll('.Counter') ?? [])];
     return {
       href: mine?.getAttribute('href'),
@@ -85,12 +87,16 @@ try {
     `counters=${tabInfo.counterCount}`,
   );
   const query = new URLSearchParams(tabInfo.href?.split('?')[1] ?? '');
-  check('tab href decodes to author:@me query', query.get('q') === 'is:pr is:open author:@me', tabInfo.href);
+  check(
+    'tab href decodes to author:@me query',
+    query.get('q') === 'is:pr is:open author:@me',
+    tabInfo.href,
+  );
 
   const reviewInfo = await page.evaluate(() => {
     const review = document.getElementById('review-requested-repo-tab');
     const mine = document.getElementById('my-prs-repo-tab');
-    const liOf = el => el?.closest('li');
+    const liOf = (el) => el?.closest('li');
     const counter = review?.querySelector('.prix-tab-counter');
     return {
       present: Boolean(review),
@@ -103,7 +109,11 @@ try {
   });
   check('Review requested tab exists', reviewInfo.present);
   check('Review requested tab sits after My PRs', reviewInfo.afterMine);
-  check('Review requested label', reviewInfo.label === 'Review requested', JSON.stringify(reviewInfo.label));
+  check(
+    'Review requested label',
+    reviewInfo.label === 'Review requested',
+    JSON.stringify(reviewInfo.label),
+  );
   const reviewQuery = new URLSearchParams(reviewInfo.href?.split('?')[1] ?? '');
   check(
     'Review requested href decodes to review-requested:@me',
@@ -122,7 +132,11 @@ try {
     const counter = document.querySelector('#my-prs-repo-tab .prix-tab-counter');
     return {present: Boolean(counter), text: counter?.textContent ?? null};
   });
-  check('counter placeholder present even logged out', counterState.present, JSON.stringify(counterState));
+  check(
+    'counter placeholder present even logged out',
+    counterState.present,
+    JSON.stringify(counterState),
+  );
   check(
     'no count shown when logged out (graceful)',
     counterState.present && !/\d/.test(counterState.text ?? ''),
@@ -131,7 +145,9 @@ try {
 
   // Icon must be the PR tab's current icon, byte for byte
   const icons = await page.evaluate(() => ({
-    prs: document.querySelector('#pull-requests-tab svg, a#pull-requests-repo-tab svg')?.outerHTML ?? null,
+    prs:
+      document.querySelector('#pull-requests-tab svg, a#pull-requests-repo-tab svg')?.outerHTML ??
+      null,
     mine: document.querySelector('#my-prs-repo-tab svg')?.outerHTML ?? null,
   }));
   check('tab icon matches the Pull requests icon', icons.prs !== null && icons.prs === icons.mine);
@@ -144,15 +160,21 @@ try {
   const reinserted = await page.evaluate(() => {
     const mine = document.getElementById('my-prs-repo-tab');
     const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-    const liOf = el => el?.closest('li');
+    const liOf = (el) => el?.closest('li');
     return {
       back: Boolean(mine),
       rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
       counterBack: Boolean(mine?.querySelector('.prix-tab-counter')),
-      reviewAfterMine: liOf(mine)?.nextElementSibling === liOf(document.getElementById('review-requested-repo-tab')),
+      reviewAfterMine:
+        liOf(mine)?.nextElementSibling ===
+        liOf(document.getElementById('review-requested-repo-tab')),
     };
   });
-  check('tab re-inserts after GitHub drops it', reinserted.back && reinserted.rightAfterPrTab, JSON.stringify(reinserted));
+  check(
+    'tab re-inserts after GitHub drops it',
+    reinserted.back && reinserted.rightAfterPrTab,
+    JSON.stringify(reinserted),
+  );
   check('re-inserted tab has its counter placeholder', reinserted.counterBack);
   check('Review requested tab stays after My PRs', reinserted.reviewAfterMine);
   await shot(page, '01-my-prs-tab.png');
@@ -160,11 +182,15 @@ try {
   // Logged-out GitHub 302-redirects author:@me to /pulls/@me, so a real
   // navigation can never keep the author:@me URL. Exercise the selected-state
   // path by spoofing the URL on the plain /pulls page and re-running init.
-  const landed = await page.goto(`https://github.com${tabInfo.href}`, {waitUntil: 'domcontentloaded'});
+  const landed = await page.goto(`https://github.com${tabInfo.href}`, {
+    waitUntil: 'domcontentloaded',
+  });
   await page.waitForTimeout(2000);
   console.log(`  my-prs href status=${landed?.status()} landed on: ${page.url()}`);
 
-  await page.goto('https://github.com/refined-github/refined-github/pulls', {waitUntil: 'domcontentloaded'});
+  await page.goto('https://github.com/refined-github/refined-github/pulls', {
+    waitUntil: 'domcontentloaded',
+  });
   await page.waitForSelector('#my-prs-repo-tab', {timeout: 15_000});
   // Logged out, /pulls/@me lists EVERYONE's PRs - our tab must stay unselected
   await page.evaluate(() => {
@@ -175,14 +201,22 @@ try {
   const atMeLoggedOut = await page.evaluate(
     () => document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
   );
-  check('logged-out /pulls/@me does not select our tab', atMeLoggedOut === null, `aria-current=${atMeLoggedOut}`);
+  check(
+    'logged-out /pulls/@me does not select our tab',
+    atMeLoggedOut === null,
+    `aria-current=${atMeLoggedOut}`,
+  );
   await page.evaluate(() => {
-    history.replaceState(null, '', '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me');
+    history.replaceState(
+      null,
+      '',
+      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me',
+    );
     document.dispatchEvent(new Event('turbo:render'));
   });
   await page.waitForTimeout(500);
   const selected = await page.evaluate(() => {
-    const read = el => ({
+    const read = (el) => ({
       ariaCurrent: el?.getAttribute('aria-current') ?? null,
       selectedClass: el?.classList.contains('selected') ?? null,
     });
@@ -204,14 +238,22 @@ try {
 
   // Review requested selected state + mutual exclusion
   await page.evaluate(() => {
-    history.replaceState(null, '', '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+review-requested%3A%40me');
+    history.replaceState(
+      null,
+      '',
+      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+review-requested%3A%40me',
+    );
     document.dispatchEvent(new Event('turbo:render'));
   });
   await page.waitForTimeout(500);
   const reviewSelected = await page.evaluate(() => ({
-    review: document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current') ?? null,
+    review:
+      document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current') ?? null,
     mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
-    prs: document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')?.getAttribute('aria-current') ?? null,
+    prs:
+      document
+        .querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')
+        ?.getAttribute('aria-current') ?? null,
   }));
   check(
     'Review requested tab selected on its query, others not',
@@ -222,7 +264,11 @@ try {
   // Regression: GitHub re-asserts its tab via attribute flips only - the
   // attribute observer must put our tab back. Back on the My PRs URL first.
   await page.evaluate(() => {
-    history.replaceState(null, '', '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me');
+    history.replaceState(
+      null,
+      '',
+      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me',
+    );
     document.dispatchEvent(new Event('turbo:render'));
   });
   await page.waitForTimeout(500);
@@ -237,7 +283,10 @@ try {
   await page.waitForTimeout(600);
   const reasserted = await page.evaluate(() => ({
     mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
-    prs: document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')?.getAttribute('aria-current') ?? null,
+    prs:
+      document
+        .querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')
+        ?.getAttribute('aria-current') ?? null,
   }));
   check(
     'selected state re-applied after GitHub attribute flips',
@@ -248,13 +297,20 @@ try {
 
   // ── Pick a multi-file PR (react/react PRs almost always touch __tests__) ──
   console.log('\n== Picking a PR ==');
-  await page.goto('https://github.com/react/react/pulls?q=is%3Apr+is%3Amerged+sort%3Aupdated-desc', {
-    waitUntil: 'domcontentloaded',
-  });
+  await page.goto(
+    'https://github.com/react/react/pulls?q=is%3Apr+is%3Amerged+sort%3Aupdated-desc',
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  );
   await page.waitForSelector('a[href*="/pull/"]');
   const prUrls = await page.evaluate(() =>
-    [...document.querySelectorAll('a[href*="/react/react/pull/"][id^="issue_"], a.js-navigation-open[href*="/pull/"]')]
-      .map(link => link.getAttribute('href'))
+    [
+      ...document.querySelectorAll(
+        'a[href*="/react/react/pull/"][id^="issue_"], a.js-navigation-open[href*="/pull/"]',
+      ),
+    ]
+      .map((link) => link.getAttribute('href'))
       .filter(Boolean)
       .slice(0, 4),
   );
@@ -286,14 +342,14 @@ try {
   await page.evaluate(async () => {
     for (let y = 0; y < document.body.scrollHeight; y += 800) {
       window.scrollTo(0, y);
-      await new Promise(resolve => setTimeout(resolve, 120));
+      await new Promise((resolve) => setTimeout(resolve, 120));
     }
     window.scrollTo(0, 0);
   });
   await page.waitForTimeout(1000);
 
   const classic = await page.evaluate(() => {
-    const chips = [...document.querySelectorAll('#prix-bar .prix-chip')].map(chip => ({
+    const chips = [...document.querySelectorAll('#prix-bar .prix-chip')].map((chip) => ({
       category: chip.getAttribute('data-category'),
       state: chip.getAttribute('data-state'),
       meta: chip.querySelector('.prix-chip-meta')?.textContent?.trim(),
@@ -305,11 +361,13 @@ try {
       segments: document.querySelectorAll('#prix-bar .prix-bar-track .prix-segment').length,
       chips,
       totals: document.querySelector('#prix-bar .prix-totals')?.textContent?.trim(),
-      controls: [...document.querySelectorAll('#prix-bar .prix-control')].map(b => b.getAttribute('aria-label')),
+      controls: [...document.querySelectorAll('#prix-bar .prix-control')].map((b) =>
+        b.getAttribute('aria-label'),
+      ),
       fileCount: files.length,
       badges: document.querySelectorAll('.prix-badge').length,
-      collapsed: files.filter(f => f.classList.contains('prix-collapsed')).length,
-      hidden: files.filter(f => f.classList.contains('prix-hidden')).length,
+      collapsed: files.filter((f) => f.classList.contains('prix-collapsed')).length,
+      hidden: files.filter((f) => f.classList.contains('prix-hidden')).length,
     };
   });
   check('exactly one impact bar', classic.bars === 1, `bars=${classic.bars}`);
@@ -319,26 +377,45 @@ try {
   });
   check(
     'bar never becomes a flex/grid column',
-    barParentDisplay !== null && !barParentDisplay.includes('flex') && !barParentDisplay.includes('grid'),
+    barParentDisplay !== null &&
+      !barParentDisplay.includes('flex') &&
+      !barParentDisplay.includes('grid'),
     `parent display=${barParentDisplay}`,
   );
-  check('slim bar has segments without inner text', classic.segments >= 2, `segments=${classic.segments}`);
+  check(
+    'slim bar has segments without inner text',
+    classic.segments >= 2,
+    `segments=${classic.segments}`,
+  );
   check('legend chips render', classic.chips.length >= 2, JSON.stringify(classic.chips));
   check('totals shown', /\d+ files? · \d+ lines/.test(classic.totals ?? ''), classic.totals);
   check(
     'control buttons present',
-    ['Previous visible file (Shift+K)', 'Next visible file (Shift+J)', 'Expand all categories', 'Collapse all categories', 'Copy impact report as markdown'].every(
-      label => classic.controls.includes(label),
-    ),
+    [
+      'Previous visible file (Shift+K)',
+      'Next visible file (Shift+J)',
+      'Expand all categories',
+      'Collapse all categories',
+      'Copy impact report as markdown',
+    ].every((label) => classic.controls.includes(label)),
     JSON.stringify(classic.controls),
   );
   check('files parsed', classic.fileCount > 0, `files=${classic.fileCount}`);
   check('badges in file headers', classic.badges > 0, `badges=${classic.badges}`);
-  const overMatch = await page.evaluate(() =>
-    [...document.querySelectorAll('.prix-collapsed, .prix-hidden')].filter(el => !el.matches('div.js-file')).length,
+  const overMatch = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('.prix-collapsed, .prix-hidden')].filter(
+        (el) => !el.matches('div.js-file'),
+      ).length,
   );
-  check('state classes only on file containers (over-match guard)', overMatch === 0, `strays=${overMatch}`);
-  console.log(`  files=${classic.fileCount} collapsed=${classic.collapsed} hidden=${classic.hidden}`);
+  check(
+    'state classes only on file containers (over-match guard)',
+    overMatch === 0,
+    `strays=${overMatch}`,
+  );
+  console.log(
+    `  files=${classic.fileCount} collapsed=${classic.collapsed} hidden=${classic.hidden}`,
+  );
   await shot(page, '03-impact-bar-classic.png');
   await page.locator('#prix-bar').screenshot({path: 'e2e/screenshots/03b-impact-bar-closeup.png'});
   console.log('  screenshot: e2e/screenshots/03b-impact-bar-closeup.png');
@@ -346,8 +423,10 @@ try {
   // ── 3. File tree dimming ─────────────────────────────────────────────────
   console.log('\n== File tree sync ==');
   const tree = await page.evaluate(() => {
-    const rows = [...document.querySelectorAll('li.js-tree-node')].filter(row => row.querySelector('a[href^="#diff-"]'));
-    const byState = state => rows.filter(row => row.classList.contains(state)).length;
+    const rows = [...document.querySelectorAll('li.js-tree-node')].filter((row) =>
+      row.querySelector('a[href^="#diff-"]'),
+    );
+    const byState = (state) => rows.filter((row) => row.classList.contains(state)).length;
     return {
       fileRows: rows.length,
       collapsed: byState('prix-tree-collapsed'),
@@ -363,35 +442,54 @@ try {
   );
   check('collapsed categories dim tree rows', treeCollapsed > 0, `collapsedRows=${treeCollapsed}`);
   const folderDim = await page.evaluate(() => {
-    const folders = [...document.querySelectorAll('li.js-tree-node[data-tree-entry-type="directory"]')];
+    const folders = [
+      ...document.querySelectorAll('li.js-tree-node[data-tree-entry-type="directory"]'),
+    ];
     return {
       folders: folders.length,
-      dimmed: folders.filter(f => f.classList.contains('prix-tree-collapsed')).length,
+      dimmed: folders.filter((f) => f.classList.contains('prix-tree-collapsed')).length,
       closed: folders.filter(
-        f => f.querySelector(':scope > [aria-expanded]')?.getAttribute('aria-expanded') === 'false',
+        (f) =>
+          f.querySelector(':scope > [aria-expanded]')?.getAttribute('aria-expanded') === 'false',
       ).length,
-      badgedFolders: folders.filter(f => f.querySelector('.prix-tree-badge')).length,
+      badgedFolders: folders.filter((f) => f.querySelector('.prix-tree-badge')).length,
     };
   });
-  check('fully-faded folders dim too', folderDim.folders > 0 && folderDim.dimmed > 0, JSON.stringify(folderDim));
-  check('faded folders auto-collapse their disclosure', folderDim.closed > 0, `closed=${folderDim.closed}`);
+  check(
+    'fully-faded folders dim too',
+    folderDim.folders > 0 && folderDim.dimmed > 0,
+    JSON.stringify(folderDim),
+  );
+  check(
+    'faded folders auto-collapse their disclosure',
+    folderDim.closed > 0,
+    `closed=${folderDim.closed}`,
+  );
   check('folders never get badges', folderDim.badgedFolders === 0);
   await page.click('#prix-bar .prix-control[aria-label="Expand all categories"]');
   await page.waitForTimeout(400);
   const treeRestored = await page.evaluate(
-    () => document.querySelectorAll('li.js-tree-node.prix-tree-collapsed, li.js-tree-node.prix-tree-hidden').length,
+    () =>
+      document.querySelectorAll(
+        'li.js-tree-node.prix-tree-collapsed, li.js-tree-node.prix-tree-hidden',
+      ).length,
   );
   check('expanding undims tree rows', treeRestored === 0, `dimmed=${treeRestored}`);
 
   // ── 4. Chip interaction: cycle tests collapsed → hidden → visible → collapsed ──
   console.log('\n== Chip interaction ==');
   const target = await page.evaluate(
-    () => document.querySelector('#prix-bar .prix-chip:not([hidden])')?.getAttribute('data-category') ?? null,
+    () =>
+      document.querySelector('#prix-bar .prix-chip:not([hidden])')?.getAttribute('data-category') ??
+      null,
   );
   if (target) {
     const NEXT = {visible: 'collapsed', collapsed: 'hidden', hidden: 'visible'};
     const initial = await page.evaluate(
-      category => document.querySelector(`#prix-bar .prix-chip[data-category="${category}"]`)?.getAttribute('data-state'),
+      (category) =>
+        document
+          .querySelector(`#prix-bar .prix-chip[data-category="${category}"]`)
+          ?.getAttribute('data-state'),
       target,
     );
     const expected = [NEXT[initial], NEXT[NEXT[initial]], NEXT[NEXT[NEXT[initial]]]];
@@ -400,17 +498,17 @@ try {
       await page.click(`#prix-bar .prix-chip[data-category="${target}"]`);
       await page.waitForTimeout(300);
       states.push(
-        await page.evaluate(category => {
+        await page.evaluate((category) => {
           const chip = document.querySelector(`#prix-bar .prix-chip[data-category="${category}"]`);
           const containers = [...document.querySelectorAll('div.js-file .prix-badge')]
-            .filter(badge => badge.textContent === category)
-            .map(badge => badge.closest('div.js-file'));
+            .filter((badge) => badge.textContent === category)
+            .map((badge) => badge.closest('div.js-file'));
           return {
             chipState: chip?.getAttribute('data-state'),
-            collapsed: containers.every(el => el?.classList.contains('prix-collapsed')),
-            hidden: containers.every(el => el?.classList.contains('prix-hidden')),
+            collapsed: containers.every((el) => el?.classList.contains('prix-collapsed')),
+            hidden: containers.every((el) => el?.classList.contains('prix-hidden')),
             containerCount: containers.length,
-            zeroHeight: containers.every(el => (el?.getBoundingClientRect().height ?? 1) === 0),
+            zeroHeight: containers.every((el) => (el?.getBoundingClientRect().height ?? 1) === 0),
           };
         }, target),
       );
@@ -419,17 +517,19 @@ try {
     check(
       `chip "${target}" cycles ${initial}→${expected.join('→')}`,
       states.every((state, i) => state.chipState === expected[i]),
-      JSON.stringify(states.map(s => s.chipState)),
+      JSON.stringify(states.map((s) => s.chipState)),
     );
     const matchesState = (state, expectedState) =>
-      expectedState === 'collapsed' ? state.collapsed && !state.hidden
-        : expectedState === 'hidden' ? state.hidden
-        : !state.collapsed && !state.hidden;
+      expectedState === 'collapsed'
+        ? state.collapsed && !state.hidden
+        : expectedState === 'hidden'
+          ? state.hidden
+          : !state.collapsed && !state.hidden;
     if (states[0]?.containerCount > 0) {
       check(
         'container classes follow chip state',
         states.every((state, i) => matchesState(state, expected[i])),
-        JSON.stringify(states.map(s => ({s: s.chipState, c: s.collapsed, h: s.hidden}))),
+        JSON.stringify(states.map((s) => ({s: s.chipState, c: s.collapsed, h: s.hidden}))),
       );
       const hiddenStep = states.find((state, i) => expected[i] === 'hidden');
       const visibleStep = states.find((state, i) => expected[i] === 'visible');
@@ -439,7 +539,7 @@ try {
 
     // Tree rows follow the cycled category's final state (= its initial state)
     const finalState = states[2]?.chipState;
-    const treeAfterCycle = await page.evaluate(category => {
+    const treeAfterCycle = await page.evaluate((category) => {
       let matched = 0;
       let collapsed = 0;
       let hidden = 0;
@@ -479,7 +579,7 @@ try {
   const flashIndex = () =>
     page.evaluate(() => {
       const containers = [...document.querySelectorAll('div.js-file')];
-      return containers.findIndex(el => el.classList.contains('prix-flash'));
+      return containers.findIndex((el) => el.classList.contains('prix-flash'));
     });
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
@@ -494,7 +594,11 @@ try {
   await page.keyboard.press('Shift+J');
   await page.waitForTimeout(500);
   const secondFlash = await flashIndex();
-  check('Shift+J jumps to next visible file', secondFlash > firstFlash, `flash ${firstFlash} → ${secondFlash}`);
+  check(
+    'Shift+J jumps to next visible file',
+    secondFlash > firstFlash,
+    `flash ${firstFlash} → ${secondFlash}`,
+  );
   await page.keyboard.press('Shift+K');
   await page.waitForTimeout(500);
   const thirdFlash = await flashIndex();
@@ -506,9 +610,16 @@ try {
   await page.waitForTimeout(400);
   const allCollapsed = await page.evaluate(() => {
     const files = [...document.querySelectorAll('div.js-file')];
-    return {collapsed: files.filter(f => f.classList.contains('prix-collapsed')).length, total: files.length};
+    return {
+      collapsed: files.filter((f) => f.classList.contains('prix-collapsed')).length,
+      total: files.length,
+    };
   });
-  check('collapse-all collapses every file', allCollapsed.collapsed === allCollapsed.total, JSON.stringify(allCollapsed));
+  check(
+    'collapse-all collapses every file',
+    allCollapsed.collapsed === allCollapsed.total,
+    JSON.stringify(allCollapsed),
+  );
   await shot(page, '05-collapse-all.png');
   await page.click('#prix-bar .prix-control[aria-label="Expand all categories"]');
   await page.waitForTimeout(400);
@@ -548,12 +659,16 @@ try {
 
   // ── 9. Language impact chart on a langwatch PR ───────────────────────────
   console.log('\n== Language impact chart ==');
-  await page.goto('https://github.com/langwatch/langwatch/pull/5863/files', {waitUntil: 'domcontentloaded'});
+  await page.goto('https://github.com/langwatch/langwatch/pull/5863/files', {
+    waitUntil: 'domcontentloaded',
+  });
   await page.waitForSelector('div.js-file', {timeout: 60_000});
   await page.waitForSelector('#prix-bar', {timeout: 15_000});
   const chartText = await page
     .waitForSelector('#prix-bar .prix-chart:not([hidden])', {timeout: 15_000})
-    .then(() => page.evaluate(() => document.querySelector('#prix-bar .prix-chart')?.textContent?.trim()))
+    .then(() =>
+      page.evaluate(() => document.querySelector('#prix-bar .prix-chart')?.textContent?.trim()),
+    )
     .catch(() => null);
   check(
     'Language Impact Map shown for langwatch PR',
@@ -594,7 +709,10 @@ try {
   );
   await page.evaluate(() => localStorage.removeItem('prix-disabled'));
   await page.goto(`https://github.com${prPath}/files`, {waitUntil: 'domcontentloaded'});
-  const back = await page.waitForSelector('#prix-bar', {timeout: 15_000}).then(() => true).catch(() => false);
+  const back = await page
+    .waitForSelector('#prix-bar', {timeout: 15_000})
+    .then(() => true)
+    .catch(() => false);
   check('features return after removing the kill switch', back);
 
   // ── 11. New React view (/changes) - expected to redirect when logged out ──
@@ -602,19 +720,28 @@ try {
   await page.goto(`https://github.com${prPath}/changes`, {waitUntil: 'domcontentloaded'});
   const onReactView = new URL(page.url()).pathname.endsWith('/changes');
   if (!onReactView) {
-    console.log('  SKIP: /changes redirected to /files - the React PR files view is not reachable unauthenticated');
+    console.log(
+      '  SKIP: /changes redirected to /files - the React PR files view is not reachable unauthenticated',
+    );
     await shot(page, '08-react-view-unavailable.png');
   } else {
-    const reactContainers = await page.waitForSelector('div[id^="diff-"]', {timeout: 15_000}).catch(() => null);
+    const reactContainers = await page
+      .waitForSelector('div[id^="diff-"]', {timeout: 15_000})
+      .catch(() => null);
     check('react view containers', Boolean(reactContainers));
   }
 
-  check('no [PR Impact] console errors all run', prixErrors.length === 0, prixErrors.slice(0, 2).join(' | '));
+  check(
+    'no [PR Impact] console errors all run',
+    prixErrors.length === 0,
+    prixErrors.slice(0, 2).join(' | '),
+  );
 } finally {
   await context.close();
+  rmSync(profile, {recursive: true, force: true});
 }
 
-const failed = results.filter(r => !r.ok);
+const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length > 0) {
   console.log('Failures:');

@@ -28,12 +28,12 @@ function queryByClassPrefix(root: ParentNode, prefix: string): Element | null {
 }
 
 function parseDiffstatText(text: string): ChangedLines | null {
-  const added = /(\d+)\s+additions?/.exec(text);
-  const removed = /(\d+)\s+deletions?/.exec(text);
+  const added = /([\d,]+)\s+additions?/.exec(text);
+  const removed = /([\d,]+)\s+deletions?/.exec(text);
   if (added ?? removed) {
     return {
-      added: added ? Number(added[1]) : 0,
-      removed: removed ? Number(removed[1]) : 0,
+      added: added ? Number(added[1].replaceAll(',', '')) : 0,
+      removed: removed ? Number(removed[1].replaceAll(',', '')) : 0,
     };
   }
 
@@ -88,7 +88,9 @@ const classicAdapter: ViewAdapter = {
     // aria-label/title/text depending on the page version - try all of it.
     const header = container.querySelector('.file-header');
     if (header) {
-      const labeled = header.querySelector('[aria-label*="addition"], [title*="addition"]');
+      const labeled = header.querySelector(
+        '[aria-label*="addition"], [title*="addition"], [aria-label*="deletion"], [title*="deletion"]',
+      );
       const fromLabel = parseDiffstatText(
         labeled?.getAttribute('aria-label') ?? labeled?.getAttribute('title') ?? '',
       );
@@ -143,7 +145,9 @@ const reactAdapter: ViewAdapter = {
     // (aria-label text in some variants). Trust those first.
     const header = this.getHeader(container);
     if (header) {
-      const labeled = header.querySelector('[aria-label*="addition"], [title*="addition"]');
+      const labeled = header.querySelector(
+        '[aria-label*="addition"], [title*="addition"], [aria-label*="deletion"], [title*="deletion"]',
+      );
       const fromLabel = parseDiffstatText(
         labeled?.getAttribute('aria-label') ?? labeled?.getAttribute('title') ?? '',
       );
@@ -182,12 +186,12 @@ const reactAdapter: ViewAdapter = {
 
 export const adapters: ViewAdapter[] = [classicAdapter, reactAdapter];
 
-export const containerSelector = adapters.map(adapter => adapter.containerSelector).join(', ');
+export const containerSelector = adapters.map((adapter) => adapter.containerSelector).join(', ');
 
-export const headerSelector = adapters.map(adapter => adapter.headerSelector).join(', ');
+export const headerSelector = adapters.map((adapter) => adapter.headerSelector).join(', ');
 
 export function adapterFor(container: Element): ViewAdapter | undefined {
-  return adapters.find(adapter => container.matches(adapter.containerSelector));
+  return adapters.find((adapter) => container.matches(adapter.containerSelector));
 }
 
 /**
@@ -205,7 +209,16 @@ export function adapterFor(container: Element): ViewAdapter | undefined {
 export function outerFileWrapper(container: Element): Element {
   let outer = container;
   let parent = container.parentElement;
-  for (let hops = 0; parent && hops < 4 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+  for (
+    let hops = 0;
+    parent && hops < 4 && parent.tagName !== 'MAIN' && parent !== document.body;
+    hops++
+  ) {
+    // A list of file slots is not a per-file wrapper. Check before scanning
+    // its descendants so a large PR does not trigger a full scan per file.
+    if (parent.childElementCount > 4) {
+      break;
+    }
     if (parent.querySelectorAll(containerSelector).length !== 1) {
       break;
     }
@@ -215,10 +228,6 @@ export function outerFileWrapper(container: Element): Element {
     }
 
     if (parent.querySelector('section[class*="PullRequestFilesToolbar"], .pr-toolbar')) {
-      break;
-    }
-
-    if (parent.childElementCount > 4) {
       break;
     }
 
@@ -245,7 +254,11 @@ const REACT_FILE_ID = /^diff-[0-9a-f]{8,}$/;
  * file container inside itself.
  */
 export function isFileContainer(element: Element): boolean {
-  if (element === document.body || element === document.documentElement || element.tagName === 'MAIN') {
+  if (
+    element === document.body ||
+    element === document.documentElement ||
+    element.tagName === 'MAIN'
+  ) {
     return false;
   }
 

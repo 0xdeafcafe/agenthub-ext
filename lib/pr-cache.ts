@@ -28,8 +28,18 @@ export function prCacheKey(owner: string, repo: string, prNumber: string): strin
   return `${owner}/${repo}#${prNumber}`;
 }
 
-/** Fresh unless both sides know a SHA and they differ. */
-export function isCacheFresh(entry: Pick<PrCacheEntry, 'sha'>, pageSha: string | null): boolean {
+/** Unknown revisions expire quickly so an old visit cannot inflate counts forever. */
+export function isCacheFresh(
+  entry: Pick<PrCacheEntry, 'sha'> & {ts?: number},
+  pageSha: string | null,
+): boolean {
+  if (
+    (!pageSha || !entry.sha) &&
+    entry.ts !== undefined &&
+    Date.now() - entry.ts > 15 * 60 * 1000
+  ) {
+    return false;
+  }
   return pageSha === null || entry.sha === null || entry.sha === pageSha;
 }
 
@@ -54,14 +64,17 @@ export function displayCounts(
 }
 
 /** LRU trim: keep the newest `max` entries by timestamp. Pure. */
-export function trimCache(record: Record<string, PrCacheEntry>, max = MAX_ENTRIES): Record<string, PrCacheEntry> {
+export function trimCache(
+  record: Record<string, PrCacheEntry>,
+  max = MAX_ENTRIES,
+): Record<string, PrCacheEntry> {
   const keys = Object.keys(record);
   if (keys.length <= max) {
     return record;
   }
 
   const byAge = keys.sort((a, b) => (record[b].ts ?? 0) - (record[a].ts ?? 0));
-  return Object.fromEntries(byAge.slice(0, max).map(key => [key, record[key]]));
+  return Object.fromEntries(byAge.slice(0, max).map((key) => [key, record[key]]));
 }
 
 /**

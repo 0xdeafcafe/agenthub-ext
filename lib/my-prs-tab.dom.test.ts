@@ -8,7 +8,7 @@ const NAV = `
     <li><a id="actions-tab" href="/octo/hello/actions"><span data-content="Actions">Actions</span></a></li>
   </ul></nav>`;
 
-const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
   document.body.innerHTML = NAV;
@@ -18,17 +18,21 @@ beforeEach(() => {
 describe('custom pulls tabs', () => {
   it('inserts My PRs and Review requested in order after Pull requests', () => {
     ensureMyPrsTab();
-    const items = [...document.querySelectorAll('nav[aria-label="Repository"] li a')].map(a => a.id || a.textContent);
+    const items = [...document.querySelectorAll('nav[aria-label="Repository"] li a')].map(
+      (a) => a.id || a.textContent,
+    );
     expect(items).toEqual([
       'pull-requests-tab',
       'my-prs-repo-tab',
       'review-requested-repo-tab',
       'actions-tab',
     ]);
-    expect(document.querySelector('#my-prs-repo-tab span[data-content]')?.textContent).toBe('My PRs');
-    expect(document.querySelector('#review-requested-repo-tab span[data-content]')?.textContent).toBe(
-      'Review requested',
+    expect(document.querySelector('#my-prs-repo-tab span[data-content]')?.textContent).toBe(
+      'My PRs',
     );
+    expect(
+      document.querySelector('#review-requested-repo-tab span[data-content]')?.textContent,
+    ).toBe('Review requested');
   });
 
   it('builds @me hrefs when logged out and keeps counters as empty placeholders', () => {
@@ -60,14 +64,18 @@ describe('custom pulls tabs', () => {
     history.replaceState(null, '', '/octo/hello/pulls?q=is:pr is:open author:@me');
     ensureMyPrsTab();
     expect(document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current')).toBe('page');
-    expect(document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current')).toBeNull();
+    expect(
+      document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current'),
+    ).toBeNull();
     expect(document.getElementById('pull-requests-tab')?.getAttribute('aria-current')).toBeNull();
   });
 
   it('marks Review requested selected on its URL, never both', () => {
     history.replaceState(null, '', '/octo/hello/pulls?q=is:pr is:open review-requested:@me');
     ensureMyPrsTab();
-    expect(document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current')).toBe('page');
+    expect(document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current')).toBe(
+      'page',
+    );
     expect(document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current')).toBeNull();
   });
 

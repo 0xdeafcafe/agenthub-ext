@@ -14,8 +14,8 @@ export interface CompiledRule extends CategoryRule {
 
 export function compileRule(rule: CategoryRule): CompiledRule {
   // dot: true so `**/*` also matches dotfiles like `.github/workflows/x.yml`
-  const matchers = rule.globs.map(glob => picomatch(glob, {dot: true}));
-  return {...rule, matches: path => matchers.some(isMatch => isMatch(path))};
+  const matchers = rule.globs.map((glob) => picomatch(glob, {dot: true}));
+  return {...rule, matches: (path) => matchers.some((isMatch) => isMatch(path))};
 }
 
 export function compileRules(rules: CategoryRule[]): CompiledRule[] {
@@ -33,6 +33,20 @@ export function classify(path: string, rules: CompiledRule[]): string {
   return 'code';
 }
 
+export function explainClassification(
+  path: string,
+  rules: CompiledRule[],
+  override?: string,
+): string {
+  if (override) return `Your repository override classifies this file as ${override}.`;
+  for (const rule of rules) {
+    if (!rule.matches(path)) continue;
+    const glob = rule.globs.find((pattern) => picomatch(pattern, {dot: true})(path));
+    return `Matches ${glob ?? 'a rule'} in the ${rule.name} category. First matching rule wins.`;
+  }
+  return 'No category rule matched. This file uses the default code category.';
+}
+
 export function actionFor(category: string, rules: CompiledRule[]): CategoryAction {
-  return rules.find(rule => rule.name === category)?.action ?? 'visible';
+  return rules.find((rule) => rule.name === category)?.action ?? 'visible';
 }

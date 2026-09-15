@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
 import {describe, expect, it} from 'vitest';
-import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, trimCache, type PrCacheEntry} from './pr-cache';
+import {
+  displayCounts,
+  extractHeadSha,
+  isCacheFresh,
+  prCacheKey,
+  trimCache,
+  type PrCacheEntry,
+} from './pr-cache';
 
-const count = (files: number, lines = 0): {files: number; added: number; removed: number; reviewed: number} => ({
+const count = (
+  files: number,
+  lines = 0,
+): {files: number; added: number; removed: number; reviewed: number} => ({
   files,
   added: lines,
   removed: 0,
@@ -25,6 +35,12 @@ describe('isCacheFresh', () => {
 
   it('is stale when both SHAs are known and differ', () => {
     expect(isCacheFresh({sha: 'abc123'}, 'def456')).toBe(false);
+  });
+
+  it('expires unverified revisions after fifteen minutes', () => {
+    const ts = Date.now() - 16 * 60 * 1000;
+    expect(isCacheFresh({sha: null, ts}, null)).toBe(false);
+    expect(isCacheFresh({sha: 'abc123', ts}, 'abc123')).toBe(true);
   });
 });
 

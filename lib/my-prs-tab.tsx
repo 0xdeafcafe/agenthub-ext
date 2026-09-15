@@ -28,7 +28,7 @@ export const PULL_TABS: TabDefinition[] = [
     qualifier: 'author',
     atMePath: 'pulls/@me',
     accentCounter: true,
-    counterTitle: count => `${count} open PR${count === 1 ? '' : 's'} by you`,
+    counterTitle: (count) => `${count} open PR${count === 1 ? '' : 's'} by you`,
   },
   {
     id: 'review-requested-repo-tab',
@@ -36,7 +36,7 @@ export const PULL_TABS: TabDefinition[] = [
     qualifier: 'review-requested',
     atMePath: 'pulls/review-requested/@me',
     accentCounter: false,
-    counterTitle: count => `${count} open PR${count === 1 ? '' : 's'} awaiting your review`,
+    counterTitle: (count) => `${count} open PR${count === 1 ? '' : 's'} awaiting your review`,
   },
 ];
 
@@ -104,7 +104,7 @@ let countsCache: CountCache | null = null;
 let countsPromise: Promise<CountCache> | null = null;
 
 // Fetch attempts by cache key, so a logged-out/failed fetch doesn't retry on
-// every mutation batch (the watcher re-runs constantly by design).
+// every nav mutation batch.
 const fetchAttempts = new Map<string, number>();
 
 /**
@@ -115,11 +115,11 @@ const fetchAttempts = new Map<string, number>();
 export function preloadMyPrCounts(): Promise<CountCache> {
   countsPromise ??= browser.storage.local
     .get(COUNT_STORAGE_KEY)
-    .then(stored => {
+    .then((stored) => {
       countsCache = (stored[COUNT_STORAGE_KEY] as CountCache | undefined) ?? {};
       return countsCache;
     })
-    .catch(error => {
+    .catch((error) => {
       console.warn('[PR Impact]', 'pulls-count-preload', error);
       countsCache = {};
       return countsCache;
@@ -127,8 +127,8 @@ export function preloadMyPrCounts(): Promise<CountCache> {
   return countsPromise;
 }
 
-const countKey = (owner: string, repo: string, def: TabDefinition): string =>
-  `${owner}/${repo}:${def.qualifier}`;
+const countKey = (owner: string, repo: string, def: TabDefinition, login: string): string =>
+  `${owner}/${repo}:${def.qualifier}:${login}`;
 
 /**
  * Open-PR count for one tab. Fresh cache hits (< 5 min) skip the fetch; a
@@ -142,7 +142,7 @@ export async function fetchPullsCount(
   def: TabDefinition,
   value: string,
 ): Promise<number | null> {
-  const key = countKey(owner, repo, def);
+  const key = countKey(owner, repo, def, value);
   try {
     const all = await preloadMyPrCounts();
     const hit = all[key];
@@ -158,7 +158,10 @@ export async function fetchPullsCount(
     fetchAttempts.set(key, Date.now());
 
     const query = new URLSearchParams({q: `is:pr is:open ${def.qualifier}:${value}`}).toString();
-    const response = await fetch(`/${owner}/${repo}/pulls?${query}`, {credentials: 'include'});
+    const response = await fetch(`/${owner}/${repo}/pulls?${query}`, {
+      credentials: 'include',
+      signal: AbortSignal.timeout(8000),
+    });
     if (!response.ok) {
       return null;
     }
@@ -166,14 +169,17 @@ export async function fetchPullsCount(
     const html = await response.text();
     // Logged out, @me can't resolve (GitHub redirects and reports nonsense) -
     // only trust the count with a real user-login and our filter intact.
-    if (!extractUserLogin(html) || !extractSearchQuery(html)?.includes(`${def.qualifier}:${value}`)) {
+    if (
+      !extractUserLogin(html) ||
+      !extractSearchQuery(html)?.includes(`${def.qualifier}:${value}`)
+    ) {
       return null;
     }
 
     const count = parseOpenPullsCount(html);
     if (count !== null) {
       all[key] = {count, ts: Date.now()};
-      void browser.storage.local.set({[COUNT_STORAGE_KEY]: all});
+      await browser.storage.local.set({[COUNT_STORAGE_KEY]: all});
     }
 
     return count;
@@ -182,7 +188,12 @@ export async function fetchPullsCount(
   }
 }
 
-export function buildPullsHref(owner: string, repo: string, qualifier: string, value: string): string {
+export function buildPullsHref(
+  owner: string,
+  repo: string,
+  qualifier: string,
+  value: string,
+): string {
   const query = new URLSearchParams({q: `is:pr is:open ${qualifier}:${value}`}).toString();
   return `/${owner}/${repo}/pulls?${query}`;
 }
@@ -355,7 +366,9 @@ function ensureTab(
     // Label replacement touches only the label span, never the icon
     const label =
       link.querySelector('span[data-content]') ??
-      [...link.querySelectorAll('span')].find(span => span.textContent?.trim() && !span.querySelector('svg'));
+      [...link.querySelectorAll('span')].find(
+        (span) => span.textContent?.trim() && !span.querySelector('svg'),
+      );
     if (label) {
       label.textContent = def.label;
       label.setAttribute('data-content', def.label);
@@ -372,7 +385,7 @@ function ensureTab(
 
     item.after(clone);
 
-    const cached = countsCache?.[countKey(owner, repo, def)];
+    const cached = countsCache?.[countKey(owner, repo, def, login ?? '@me')];
     if (cached) {
       renderCount(link, cached.count, def.counterTitle(cached.count));
     }
@@ -381,6 +394,11 @@ function ensureTab(
     // correct href (login became known, or repo changed under a persistent nav)...
     if (existing.getAttribute('href') !== href) {
       existing.setAttribute('href', href);
+      const counter = existing.querySelector('.prix-tab-counter');
+      if (counter) {
+        counter.textContent = '';
+        counter.removeAttribute('title');
+      }
     }
 
     // ...and position: GitHub re-renders can orphan or reorder our li
@@ -393,24 +411,26 @@ function ensureTab(
 
   // Refresh the count in the background only when missing or stale; the
   // cached value (however old) was already rendered at insert time.
-  const hit = countsCache?.[countKey(owner, repo, def)];
+  const hit = countsCache?.[countKey(owner, repo, def, login ?? '@me')];
+  const tab = document.getElementById(def.id);
+  if (hit && tab) renderCount(tab, hit.count, def.counterTitle(hit.count));
   if (!hit || Date.now() - hit.ts > COUNT_TTL_MS) {
     void fetchPullsCount(owner, repo, def, login ?? '@me')
-      .then(count => {
+      .then((count) => {
         try {
           if (count === null) {
             return; // logged out / fetch failed - placeholder stays empty
           }
 
           const tab = document.getElementById(def.id);
-          if (tab) {
+          if (tab?.getAttribute('href') === href) {
             renderCount(tab, count, def.counterTitle(count));
           }
         } catch (error) {
           console.warn('[PR Impact]', 'pulls-count', error);
         }
       })
-      .catch(error => {
+      .catch((error) => {
         console.warn('[PR Impact]', 'pulls-count', error);
       });
   }
@@ -459,7 +479,7 @@ function ensureMyPrsTabUnsafe(): void {
  *
  * 1. A childList observer on the document: GitHub re-renders the nav subtree
  *    (deferred turbo frames, React partials) and can drop or reorder our
- *    clones, so the invariant is re-checked on every mutation batch.
+ *    clones, so the invariant is re-checked when that subtree changes.
  * 2. An attributes observer ON THE NAV: GitHub's selected-navigation
  *    machinery re-asserts the Pull requests tab's selected state via class /
  *    aria-current flips that never produce childList mutations. Without this
@@ -471,6 +491,7 @@ function ensureMyPrsTabUnsafe(): void {
  * of id lookups and zero DOM writes.
  */
 export function watchMyPrsTab(signal: AbortSignal): void {
+  if (signal.aborted) return;
   let attributeTarget: Element | null = null;
   const attributeObserver = new MutationObserver(() => {
     ensureMyPrsTab();
@@ -498,7 +519,14 @@ export function watchMyPrsTab(signal: AbortSignal): void {
 
   syncAttributeObserver();
 
-  const childObserver = new MutationObserver(() => {
+  const childObserver = new MutationObserver((mutations) => {
+    // Diff rows and our own text updates cannot affect the repository nav.
+    // Only revisit the invariant when its subtree changes or is replaced.
+    if (
+      attributeTarget?.isConnected &&
+      !mutations.some((mutation) => attributeTarget!.contains(mutation.target))
+    )
+      return;
     ensureMyPrsTab();
     syncAttributeObserver();
   });

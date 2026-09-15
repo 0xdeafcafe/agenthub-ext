@@ -2,7 +2,7 @@
 import {describe, expect, it} from 'vitest';
 import {adapters, isFileContainer, outerFileWrapper} from './views';
 
-const react = adapters.find(adapter => adapter.name === 'react')!;
+const react = adapters.find((adapter) => adapter.name === 'react')!;
 
 /** Minimal React-view file container: hashed module classes, stats as leaf spans. */
 function reactContainer(headerInner: string, body = ''): Element {
@@ -89,7 +89,8 @@ describe('react adapter getPath', () => {
   });
 
   it('returns null for a container with no header and no path label', () => {
-    document.body.innerHTML = '<div id="diff-8f14e45fceea167a5a36dedd4bea2543" role="region"></div>';
+    document.body.innerHTML =
+      '<div id="diff-8f14e45fceea167a5a36dedd4bea2543" role="region"></div>';
     expect(react.getPath(document.querySelector('div')!)).toBeNull();
   });
 });
@@ -156,7 +157,11 @@ describe('isFileContainer', () => {
       <div id="diff-comparison-viewer-container">
         <div id="diff-8f14e45fceea167a5a36dedd4bea2543"></div>
       </div>`;
-    expect(isFileContainer(document.querySelector('#diff-comparison-viewer-container')!)).toBe(false);
-    expect(isFileContainer(document.querySelector('#diff-8f14e45fceea167a5a36dedd4bea2543')!)).toBe(true);
+    expect(isFileContainer(document.querySelector('#diff-comparison-viewer-container')!)).toBe(
+      false,
+    );
+    expect(isFileContainer(document.querySelector('#diff-8f14e45fceea167a5a36dedd4bea2543')!)).toBe(
+      true,
+    );
   });
 });

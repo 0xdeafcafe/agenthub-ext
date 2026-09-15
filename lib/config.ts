@@ -4,7 +4,14 @@ import type {CategoryAction, CategoryRule} from './classifier';
 export const DEFAULT_CATEGORIES: CategoryRule[] = [
   {
     name: 'tests',
-    globs: ['**/*.test.*', '**/*.spec.*', '**/*_test.*', '**/__tests__/**', '**/test/**', '**/tests/**'],
+    globs: [
+      '**/*.test.*',
+      '**/*.spec.*',
+      '**/*_test.*',
+      '**/__tests__/**',
+      '**/test/**',
+      '**/tests/**',
+    ],
     action: 'collapse',
   },
   {
@@ -72,7 +79,11 @@ export function parseConfig(text: string): PrImpactConfig {
     }
 
     const {globs, action} = value as {globs?: unknown; action?: unknown};
-    if (!Array.isArray(globs) || globs.length === 0 || !globs.every(glob => typeof glob === 'string')) {
+    if (
+      !Array.isArray(globs) ||
+      globs.length === 0 ||
+      !globs.every((glob) => typeof glob === 'string')
+    ) {
       continue;
     }
 
@@ -89,7 +100,9 @@ export function parseConfig(text: string): PrImpactConfig {
 
   const defaultViewRaw = (data as Record<string, unknown>).defaultView;
   const defaultView =
-    Array.isArray(defaultViewRaw) && defaultViewRaw.length > 0 && defaultViewRaw.every(x => typeof x === 'string')
+    Array.isArray(defaultViewRaw) &&
+    defaultViewRaw.length > 0 &&
+    defaultViewRaw.every((x) => typeof x === 'string')
       ? (defaultViewRaw as string[])
       : null;
 
@@ -109,6 +122,7 @@ export function fetchConfig(owner: string, repo: string): Promise<PrImpactConfig
       try {
         const response = await fetch(`/${owner}/${repo}/raw/HEAD/.github/pr-impact.yml`, {
           credentials: 'include',
+          signal: AbortSignal.timeout(4000),
         });
         if (!response.ok) {
           return DEFAULT_CONFIG;

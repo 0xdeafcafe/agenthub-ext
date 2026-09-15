@@ -93,7 +93,9 @@ export function extractImpactMapText(doc: Document): string | null {
   }
 
   // Fallback: heading + code block
-  for (const heading of doc.querySelectorAll('.js-comment-body h1, .js-comment-body h2, .js-comment-body h3')) {
+  for (const heading of doc.querySelectorAll(
+    '.js-comment-body h1, .js-comment-body h2, .js-comment-body h3',
+  )) {
     if (heading.textContent?.trim() === 'PR Impact Map') {
       const code = heading.parentElement?.querySelector('pre code');
       if (code?.textContent) {
@@ -105,32 +107,44 @@ export function extractImpactMapText(doc: Document): string | null {
   return null;
 }
 
-// In-memory session cache, one fetch per PR
-const cache = new Map<string, Promise<ImpactMap | null>>();
+// Cache by PR revision for five minutes, including absent bot comments.
+const cache = new Map<string, {promise: Promise<ImpactMap | null>; ts: number}>();
 
 /** Fetches and parses the PR conversation page. Fails open to null. */
-export function fetchImpactMap(owner: string, repo: string, prNumber: string): Promise<ImpactMap | null> {
-  const key = `${owner}/${repo}#${prNumber}`;
+export function fetchImpactMap(
+  owner: string,
+  repo: string,
+  prNumber: string,
+  sha: string | null = null,
+): Promise<ImpactMap | null> {
+  const key = `${owner}/${repo}#${prNumber}:${sha ?? ''}`;
   let cached = cache.get(key);
-  if (!cached) {
-    cached = (async () => {
+  if (!cached || Date.now() - cached.ts > 5 * 60 * 1000) {
+    const promise = (async () => {
       try {
-        const response = await fetch(`/${owner}/${repo}/pull/${prNumber}`, {credentials: 'include'});
+        const response = await fetch(`/${owner}/${repo}/pull/${prNumber}`, {
+          credentials: 'include',
+          signal: AbortSignal.timeout(8000),
+        });
         if (!response.ok) {
           return null;
         }
 
         const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
         const text = extractImpactMapText(doc);
-        return text ? parseImpactMap(text) : null;
+        const map = text ? parseImpactMap(text) : null;
+        if (sha && map?.commit && !sha.startsWith(map.commit) && !map.commit.startsWith(sha))
+          return null;
+        return map;
       } catch {
         return null;
       }
     })();
+    cached = {promise, ts: Date.now()};
     cache.set(key, cached);
   }
 
-  return cached;
+  return cached.promise;
 }
 
 /** Markdown table for the clipboard. Uses Language chart rows when given, else our own counts. */
@@ -141,7 +155,8 @@ export function buildMarkdownReport(
     '| Category | Files | Added | Removed | Share |',
     '| --- | ---: | ---: | ---: | ---: |',
     ...rows.map(
-      row => `| ${row.name} | ${row.files} | +${row.added} | -${row.removed} | ${Math.round(row.share)}% |`,
+      (row) =>
+        `| ${row.name.replaceAll('|', '\\|').replaceAll(/[\r\n]+/g, ' ')} | ${row.files} | +${row.added} | -${row.removed} | ${Math.round(row.share)}% |`,
     ),
   ];
   return lines.join('\n');
