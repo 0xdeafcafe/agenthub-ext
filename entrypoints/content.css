@@ -722,6 +722,27 @@ li.prix-tree-hidden:has(> ul) > :first-child {
 }
 
 /* Collapsed: header child (tagged .prix-header by the adapter) stays, rest goes */
+.prix-view-note {
+  color: var(--fgColor-muted, #656d76);
+  margin: 10px 0 14px;
+  font-size: 11px;
+}
+.prix-header-panel {
+  box-sizing: border-box;
+  width: calc(100% - 32px);
+  flex: 0 0 auto;
+  grid-column: 1 / -1;
+}
+.prix-open-changes {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--fgColor-accent, #0969da);
+  font-weight: 600;
+}
+.prix-virtual-muted > .prix-header {
+  opacity: 0.65;
+}
 .prix-collapsed > :not(.prix-header) {
   display: none !important;
 }

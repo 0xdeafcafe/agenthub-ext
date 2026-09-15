@@ -25,6 +25,7 @@ jobs:
       - run: npm run test:browser:install -- --with-deps
       - run: npm run test:local
       - run: npm run test:features
+      - run: npm run test:pages
       - run: npm run test:visual
       - run: npm run test:extension
       - uses: actions/upload-artifact@v4

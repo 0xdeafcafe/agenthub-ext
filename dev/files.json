@@ -2,41 +2,49 @@
   {
     "path": "src/review.ts",
     "added": 128,
-    "removed": 34
+    "removed": 34,
+    "id": "diff-e7454007a81aa6bdc58e37497b74726d73be4911bd202acabaf570fda23ad876"
   },
   {
     "path": "src/components/review-panel.tsx",
     "added": 80,
-    "removed": 12
+    "removed": 12,
+    "id": "diff-583e34f27c3f969ec84b4dff8d8c1da4d1b7af500e287b5a7355c177ebf6f057"
   },
   {
     "path": "src/hooks/use-review.ts",
     "added": 41,
-    "removed": 9
+    "removed": 9,
+    "id": "diff-937107bb9ed5086b8bb1b6a196ccb7117dffa5e0e7f837ca0a9e825237bc6625"
   },
   {
     "path": "tests/review.test.ts",
     "added": 96,
-    "removed": 18
+    "removed": 18,
+    "id": "diff-bc0bf914b3666103795c0130256ddbad71cdd36b24b51ae5cfd0db7c4d960686"
   },
   {
     "path": "tests/review-panel.test.tsx",
     "added": 64,
-    "removed": 7
+    "removed": 7,
+    "id": "diff-26891bc2512e2f1833145e32f10d200299d056aab814abf6eff93e9e3ed09e59"
   },
   {
     "path": "specs/review.feature",
     "added": 22,
-    "removed": 3
+    "removed": 3,
+    "id": "diff-b24efa8548a4390fd3170c5afa3615aab25322e6e6f4916105b459622c881c67"
   },
   {
     "path": "docs/reviewing.md",
     "added": 63,
-    "removed": 8
+    "removed": 8,
+    "id": "diff-0317a648d0940842440f2f41493e91ba2bf71bdd1eb1bfa7f21c3a6632f8f51b"
   },
   {
     "path": "package-lock.json",
     "added": 2412,
-    "removed": 1301
+    "removed": 1301,
+    "id": "diff-053150b640a7ce75eff69d1a22cae7f0f94ad64ce9a855db544dda0929316519"
   }
 ]
