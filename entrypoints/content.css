@@ -721,7 +721,6 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   animation: prix-flash-outline 1.2s ease-out;
 }
 
-/* Collapsed: header child (tagged .prix-header by the adapter) stays, rest goes */
 .prix-view-note {
   color: var(--fgColor-muted, #656d76);
   margin: 10px 0 14px;
@@ -740,10 +739,12 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   color: var(--fgColor-accent, #0969da);
   font-weight: 600;
 }
-.prix-virtual-muted > .prix-header {
+.prix-virtual-muted .prix-header {
   opacity: 0.65;
 }
-.prix-collapsed > :not(.prix-header) {
+/* Preserve the header at any depth, hiding body siblings along its ancestor chain. */
+.prix-collapsed > :not(.prix-header, .prix-header-wrapper),
+.prix-collapsed .prix-header-wrapper > :not(.prix-header, .prix-header-wrapper) {
   display: none !important;
 }
 
