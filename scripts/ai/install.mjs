@@ -24,7 +24,6 @@ try {
     headless: false,
     args: [
       '--headless=new',
-      '--enable-unsafe-webgpu',
       ...fixture.args.map((arg) => arg.replace(', MAP * ~NOTFOUND', '')),
       `--disable-extensions-except=${extension}`,
       `--load-extension=${extension}`,
@@ -48,6 +47,8 @@ try {
   const ai = page.frameLocator('#prix-ai-panel iframe');
   await ai.locator('#coverage').filter({hasText: '8 files'}).waitFor();
   await ai.locator('#models-summary').filter({hasText: 'installed'}).waitFor();
+  const scope = 'src/hooks/use-review.ts';
+  await ai.locator('#scope').fill(scope);
   let lastProgress = '';
   progress = setInterval(() => {
     void ai
@@ -142,6 +143,7 @@ try {
         date: new Date().toISOString(),
         browser: context.browser().version(),
         manifest,
+        scope,
         results,
         offlineLoad: ['qwen', 'gemma'],
       },
