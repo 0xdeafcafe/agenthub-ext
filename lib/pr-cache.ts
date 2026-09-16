@@ -7,15 +7,14 @@ import type {CategoryCount} from './impact-bar';
  * and grows as files mount; this lets a revisit (or soft-nav away and back)
  * open on the last-known full picture.
  *
- * Entries are keyed owner/repo#number and carry the PR head SHA when we can
- * find one: same SHA (or no SHA either side) means the cache is usable, a
- * different SHA means the PR moved on and the cache is ignored. Display is
- * seeded from the cache and hands over to live counts once they cover at
- * least as many files - the two are never summed.
+ * Cached counts are reusable only when both head and base revisions match.
+ * Display hands over to live counts once they cover at least as many files;
+ * the two sources are never summed.
  */
 
 export interface PrCacheEntry {
   sha: string | null;
+  baseSha?: string | null;
   counts: Record<string, CategoryCount>;
   impactMap: ImpactMap | null;
   ts: number;
@@ -28,9 +27,13 @@ export function prCacheKey(owner: string, repo: string, prNumber: string): strin
   return `${owner}/${repo}#${prNumber}`;
 }
 
-/** Fresh unless both sides know a SHA and they differ. */
-export function isCacheFresh(entry: Pick<PrCacheEntry, 'sha'>, pageSha: string | null): boolean {
-  return pageSha === null || entry.sha === null || entry.sha === pageSha;
+/** A matching head alone is insufficient: the base branch can move independently. */
+export function isCacheFresh(
+  entry: Pick<PrCacheEntry, 'sha' | 'baseSha'>,
+  pageSha: string | null,
+  pageBaseSha: string | null,
+): boolean {
+  return !!pageSha && !!pageBaseSha && entry.sha === pageSha && entry.baseSha === pageBaseSha;
 }
 
 function totalFiles(counts: Record<string, CategoryCount>): number {
@@ -54,20 +57,22 @@ export function displayCounts(
 }
 
 /** LRU trim: keep the newest `max` entries by timestamp. Pure. */
-export function trimCache(record: Record<string, PrCacheEntry>, max = MAX_ENTRIES): Record<string, PrCacheEntry> {
+export function trimCache(
+  record: Record<string, PrCacheEntry>,
+  max = MAX_ENTRIES,
+): Record<string, PrCacheEntry> {
   const keys = Object.keys(record);
   if (keys.length <= max) {
     return record;
   }
 
   const byAge = keys.sort((a, b) => (record[b].ts ?? 0) - (record[a].ts ?? 0));
-  return Object.fromEntries(byAge.slice(0, max).map(key => [key, record[key]]));
+  return Object.fromEntries(byAge.slice(0, max).map((key) => [key, record[key]]));
 }
 
 /**
  * The PR head SHA from the page, best effort. GitHub embeds it in JSON
- * script payloads under a few spellings; null when none turn up (the caller
- * then treats any cached entry as usable).
+ * script payloads under a few spellings; null when none turn up.
  */
 export function extractHeadSha(doc: Document): string | null {
   for (const script of doc.querySelectorAll('script[type="application/json"]')) {
@@ -78,6 +83,17 @@ export function extractHeadSha(doc: Document): string | null {
     }
   }
 
+  return null;
+}
+
+/** The base revision participates in the diff identity even when the head is unchanged. */
+export function extractBaseSha(doc: Document): string | null {
+  for (const script of doc.querySelectorAll('script[type="application/json"]')) {
+    const match = /"(?:baseSha|base_sha|baseRefOid|baseRef\.oid)":\s*"([0-9a-f]{7,40})"/.exec(
+      script.textContent ?? '',
+    );
+    if (match) return match[1];
+  }
   return null;
 }
 

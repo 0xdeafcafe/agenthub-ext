@@ -22,7 +22,7 @@ describe('parseImpactMap', () => {
 
   it('parses a multi-category chart', () => {
     const map = parseImpactMap(fixture('impact-map-pr5863.txt'));
-    expect(map?.categories.map(c => [c.name, c.share])).toEqual([
+    expect(map?.categories.map((c) => [c.name, c.share])).toEqual([
       ['Deps', 43],
       ['Python', 29],
       ['SDKs', 29],
@@ -43,7 +43,9 @@ describe('parseImpactMap', () => {
   });
 
   it('returns null on malformed charts', () => {
-    expect(parseImpactMap('PR Impact Map · 2 files · +40 / -129 · 116b957\nno table here')).toBeNull();
+    expect(
+      parseImpactMap('PR Impact Map · 2 files · +40 / -129 · 116b957\nno table here'),
+    ).toBeNull();
     // rows but no total
     expect(
       parseImpactMap(

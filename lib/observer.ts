@@ -14,15 +14,17 @@ export function observeSelector(
   callback: (element: Element) => void,
   signal: AbortSignal,
 ): void {
+  if (signal.aborted) return;
   const MAX_MATCHES = 5000;
+  const seen = new WeakSet<Element>();
   const visit = (element: Element): void => {
-    // data attribute guard (rather than a WeakSet) so re-scans across
-    // observer restarts on the same page don't double-process
-    if (element.hasAttribute('data-prix-seen')) {
+    // Each observer owns its lifetime. DOM attributes survive Turbo snapshots
+    // and clones, and must never prevent a fresh session from processing them.
+    if (seen.has(element) || signal.aborted) {
       return;
     }
 
-    element.setAttribute('data-prix-seen', '');
+    seen.add(element);
     try {
       callback(element);
     } catch (error) {
@@ -33,7 +35,10 @@ export function observeSelector(
   const scan = (root: ParentNode): void => {
     const matches = root.querySelectorAll(selector);
     if (matches.length > MAX_MATCHES) {
-      console.warn('[PR Impact]', `selector "${selector}" matched ${matches.length} nodes - refusing to process`);
+      console.warn(
+        '[PR Impact]',
+        `selector "${selector}" matched ${matches.length} nodes - refusing to process`,
+      );
       return;
     }
 
@@ -42,7 +47,7 @@ export function observeSelector(
     }
   };
 
-  const observer = new MutationObserver(mutations => {
+  const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (!(node instanceof Element)) {
@@ -59,9 +64,13 @@ export function observeSelector(
   });
 
   // documentElement exists even at document_start; body may not yet
-  scan(document.documentElement);
   observer.observe(document.documentElement, {childList: true, subtree: true});
-  signal.addEventListener('abort', () => {
-    observer.disconnect();
-  }, {once: true});
+  scan(document.documentElement);
+  signal.addEventListener(
+    'abort',
+    () => {
+      observer.disconnect();
+    },
+    {once: true},
+  );
 }

@@ -20,7 +20,9 @@ beforeEach(() => {
 
 const folder = (label: string): Element =>
   [...document.querySelectorAll('[data-tree-entry-type="directory"]')].find(
-    row => row.querySelector(':scope > [aria-expanded] .ActionList-item-label')?.textContent?.trim() === label,
+    (row) =>
+      row.querySelector(':scope > [aria-expanded] .ActionList-item-label')?.textContent?.trim() ===
+      label,
   )!;
 
 describe('aggregateFolderState', () => {
@@ -48,7 +50,9 @@ describe('aggregateFolderState', () => {
 
 describe('row inspection', () => {
   it('reads full paths from the hidden filter-text span', () => {
-    expect(treeRowPath(document.querySelector('[data-tree-entry-type="file"]')!)).toBe('docs/guide.md');
+    expect(treeRowPath(document.querySelector('[data-tree-entry-type="file"]')!)).toBe(
+      'docs/guide.md',
+    );
   });
 
   it('tells folders from files', () => {
@@ -96,7 +100,10 @@ describe('maybeAutoCollapseFolder', () => {
     // Simulate GitHub's own disclosure behaviour
     folderDisclosure(row)!.toggle.addEventListener('click', () => {
       const holder = folderDisclosure(row)!.stateHolder;
-      holder.setAttribute('aria-expanded', holder.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+      holder.setAttribute(
+        'aria-expanded',
+        holder.getAttribute('aria-expanded') === 'true' ? 'false' : 'true',
+      );
     });
   };
 
@@ -164,9 +171,9 @@ describe('react TreeView rows', () => {
   });
 
   it('reads the full path from the row id', () => {
-    expect(treeRowPath(document.getElementById('platform/app/src/__tests__/foo.unit.test.ts')!)).toBe(
-      'platform/app/src/__tests__/foo.unit.test.ts',
-    );
+    expect(
+      treeRowPath(document.getElementById('platform/app/src/__tests__/foo.unit.test.ts')!),
+    ).toBe('platform/app/src/__tests__/foo.unit.test.ts');
   });
 
   it('tells folders from files via aria-expanded on the row', () => {

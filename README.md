@@ -2,108 +2,157 @@
 
 [![Build](https://github.com/0xdeafcafe/agenthub-ext/actions/workflows/build.yml/badge.svg)](https://github.com/0xdeafcafe/agenthub-ext/actions/workflows/build.yml)
 
-Reviewing a PR on GitHub means finding the five lines that matter buried under 2,000 that don't - generated code, lockfiles, snapshot churn. PR Impact is a browser extension (Manifest V3, Chromium) that sorts the **Files changed** page into categories and collapses the noise down to the code you actually have to read.
+Big PRs are a pain to review. Half the diff is tests, docs, generated code, and some enormous lockfile. This puts controls on the PR page so you can get to the stuff you actually need to read.
 
-## Downloads
+Collapse the noise. See where edits cluster. Stop counting comments as code. Your filters stick per repo.
 
-These links always point at the current build - they track a rolling release called `rolling`, deleted and recreated on every push to `main`, so you're never waiting on a version tag. (When a real version tag does get cut, its release takes over the `latest` slot until the next main push. Both link shapes keep working throughout.) The repo is **private**, so the links only work when you're logged into GitHub with access - yes, even the zips, GitHub auth-walls those too.
+## Install it
 
-- **Chrome / Edge / Brave** - [pr-impact-chrome-mv3.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-chrome-mv3.zip): unzip, then `chrome://extensions` → Developer mode → Load unpacked → select the unzipped folder.
-- **Arc** - the *same* [pr-impact-chrome-mv3.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-chrome-mv3.zip), at `arc://extensions`. Same steps.
-- **Firefox** - [pr-impact-firefox-mv2.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-firefox-mv2.zip): `about:debugging` → This Firefox → Load Temporary Add-on → select the zip's `manifest.json`. Unsigned, so it's a *temporary* add-on (gone after a browser restart) until someone publishes it to AMO.
-- **Safari** - [pr-impact-safari-xcode.zip](https://github.com/0xdeafcafe/agenthub-ext/releases/latest/download/pr-impact-safari-xcode.zip): an **unsigned** Xcode project, straight out of `safari-web-extension-converter`. Open it in Xcode, set your Apple ID under Signing & Capabilities, build it yourself. No, there's no easier way. Apple made sure of that.
+**Arc / Chrome / Edge / Brave:** [download the ZIP](https://github.com/0xdeafcafe/agenthub-ext/releases/download/rolling/pr-impact-chrome-mv3.zip).
 
-Every push to `main` also publishes these as workflow artefacts on the [Actions page](https://github.com/0xdeafcafe/agenthub-ext/actions/workflows/build.yml) (`pr-impact-chrome-arc`, `pr-impact-firefox`, `pr-impact-safari-xcode-project`).
+1. Unzip it somewhere you’ll keep it.
+2. Open `arc://extensions` or `chrome://extensions`.
+3. Turn on **Developer mode**.
+4. Click **Load unpacked** and select the folder containing `manifest.json`.
+5. Refresh your GitHub tabs.
 
-## What it does
+That’s it. For updates, replace the files in that folder, hit **Reload** on the extension, and refresh GitHub again.
 
-Open a PR's files page and PR Impact:
+The download tracks the last `main` commit that passed the checks. Every merge builds fresh ZIPs. Named versions live on the [releases page](https://github.com/0xdeafcafe/agenthub-ext/releases); main builds don’t take over the latest stable version.
 
-- Parses every file in the diff as it mounts. Files mount lazily on scroll, so this runs off a MutationObserver, not a one-shot query (learned that the fun way).
-- Classifies each file by glob rules. Built in: `tests` (Go-style `foo_test.go` included), `specs` (`.feature` files), `docs`, `generated` (lockfiles included). Everything else is `code`. Repos can define their own categories (`server`, `sdk`, whatever) via a config file - see below.
-- Renders an **impact bar** at the top: a slim stacked bar with one segment per category, sized by share of changed lines, and a legend of chips (`tests`, `22%`) with the file and line counts in the tooltip. Clicking a chip cycles that category through **visible → collapsed → hidden → visible**. Collapsed keeps the file header, bins the diff body. Hidden bins the whole file. State persists per category in `chrome.storage.local` and beats the config defaults on your next visit.
-- Bar controls on the right: totals (`9 files · 185 lines · 2 reviewed`), jump to previous/next visible file (or `Shift+K` / `Shift+J`), expand-all, collapse-all, and a **copy impact report** button that drops a markdown table on your clipboard.
-- Adds a dimmed category badge (`tests` and friends) to each file header, and dims the matching rows in GitHub's file tree - 35% opacity plus the badge for hidden files, a lighter touch for collapsed ones. A folder whose contents are entirely faded gets faded itself, and its disclosure closed once (re-open it by hand and it stays open - your call beats ours).
-- Counts GitHub's viewed state: `n of m reviewed` per category in the chip tooltips, and a reviewed total in the bar. Logged in only, since GitHub doesn't render the viewed toggle logged out.
-- If the PR has a Language **PR Impact Map** bot comment (their per-category percentages), the breakdown shows under the bar and the copied report uses their numbers instead of ours.
+Other browsers:
 
-There's also a pair of extra tabs in the repo nav, right after Pull requests: **My PRs** (your open PRs in this repo, `author:<you>`) and **Review requested** (open PRs waiting on your review). Both get a live count - accent-filled for My PRs so it reads as yours at a glance, GitHub's default grey for Review requested so the two don't compete. The counts need you logged in; logged out they stay politely empty.
+- **Firefox:** [download](https://github.com/0xdeafcafe/agenthub-ext/releases/download/rolling/pr-impact-firefox-mv2.zip), unzip, open `about:debugging` → **This Firefox** → **Load Temporary Add-on**, and select `manifest.json`. It’s unsigned, so you’ll need to load it again after restarting Firefox.
+- **Safari:** [download the Xcode project](https://github.com/0xdeafcafe/agenthub-ext/releases/download/rolling/pr-impact-safari-xcode.zip). Open it in Xcode, pick your signing team, then build and enable it in Safari. This is source for an unsigned app, not an installer.
 
-## The kill switch
+[Actions](https://github.com/0xdeafcafe/agenthub-ext/actions/workflows/build.yml) also keeps ZIPs for each PR and merge build. GitHub wraps an artifact download in another ZIP; unpack that first. Release downloads above skip the extra layer. Releases include `SHA256SUMS` if you want to verify a download.
 
-If the extension ever misbehaves (GitHub rearranged their DOM again, a selector over-matched), you can switch it off without uninstalling:
+## What you get
 
-1. Open any `github.com` page.
-2. DevTools → Console → `localStorage.setItem('prix-disabled', '1')`
-3. Reload. PR Impact now does nothing, on every GitHub page, and logs `[PR Impact] disabled via localStorage "prix-disabled"` to prove it.
+- **Changes at a glance** sits under the PR tabs: totals, category percentages, and a change map. It works on the first visit. No hidden/expanded switches when there’s no code on screen.
+- **Review focus** on both versions of Files changed. Code, tests, specs, docs, and generated files get separate controls. Click a category to expand, collapse, or hide it. **Focus code** and **Show all** do what they say.
+- **Change map** shows where the edits are. Bigger tile, more changed lines. Open folders, focus on one part of the repo, or jump straight to a file. Large PRs open with smart clusters that skip huge wrapper folders; you can also pick the folder depth. It groups by path; it isn’t a dependency graph.
+- **Exclude comment-only lines** adjusts the counts, percentages, map, and copied report. Inline code still counts.
+- **Unreviewed only** skips files you’ve marked as viewed. GitHub has to load a file’s viewed control before we know its state.
+- **Per-file controls** under **⋯** let you override a filter, see why a file got its category, or fix that category for the repo.
+- **Saved views** keep your category choices, folder, comment counting, and review filter together. Up to 20 per repo.
+- **Shift+J / Shift+K** jump between files. **Copy report** copies a Markdown breakdown. Settings has defaults, repo resets, and an off switch.
+- **My PRs** and **Review requested** tabs sit next to GitHub’s Pull requests tab, with counts when you’re signed in.
 
-`localStorage.removeItem('prix-disabled')` and a reload brings it back.
+If the PR has a Language **PR Impact Map** comment, its summary shows up too. Comment exclusion uses our diff counts instead.
 
-Everything the extension logs carries an `[PR Impact]` prefix. If you're reporting a breakage, grab those lines plus any React `removeChild`/`insertBefore` errors - those two together usually tell the whole story.
+## The annoying GitHub bits
 
-## Two GitHubs, one extension
+The extension downloads the PR diff so counts don’t grow every time you scroll. Commit ranges work too. If the diff is unavailable, incomplete, bigger than 20 MB, or uses an unsupported comparison such as **Hide whitespace**, the panel says the counts only cover loaded files. Missing line counts aren’t zero: categories and the map fall back to file counts, with a label saying so. **Retry full counts** tries the download again. The conversation page uses GitHub’s own totals while the breakdown loads. Cached totals are reused only when both the head and base revisions match.
 
-GitHub runs two versions of the PR files page at once:
+In GitHub’s `?mode=virtualization` view, filtered files keep a compact header. GitHub owns the row heights; fighting its scroll calculations causes flicker and jumping. We use its native collapse controls and track files by path as GitHub recycles the DOM.
 
-- **Classic view** at `/pull/:n/files` (`div.js-file` containers).
-- **New React view** at `/pull/:n/changes` (`div[id^="diff-"]` containers, hashed CSS-module classes).
+Comment detection is conservative. It recognizes common comment syntax and keeps inline code, strings, and shebangs. A diff isn’t a whole source file, so a comment that starts outside the patch can still count. Unknown syntax stays counted.
 
-Both work, via per-view DOM adapters (`lib/views.ts`), including `/changes/<sha>..<sha>` range URLs.
+GitHub configuration and diffs are fetched using your session. Public diffs can redirect to GitHub’s patch host, which the background worker handles. Diff contents aren’t sent to another service or saved to storage.
 
-**The virtualization caveat:** on huge PRs the React view removes off-screen DOM nodes. Filtering still works, but the bar's counts only cover files that have mounted so far - the numbers grow as you scroll. Classic-view oversized diffs sat behind "Load diff" buttons count as files but might not count their lines.
+## Repo config
 
-## Per-repo configuration
-
-Drop `.github/pr-impact.yml` in a repo to customise the categories. It's fetched same-origin with your session cookies, so private repos work. Any fetch or parse error falls back to the built-in defaults - a bad config file will never break the page.
+Drop `.github/pr-impact.yml` into a repo if the defaults don’t fit:
 
 ```yaml
-defaultView: [code]         # categories that start expanded; everything else starts hidden
 categories:
   tests:
-    globs: ["**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/__tests__/**", "**/test/**", "**/tests/**"]
-    action: collapse        # visible | collapse | hide
+    globs: ['**/*.test.*', '**/*.spec.*', '**/*_test.*', '**/tests/**']
+    action: collapse
   specs:
-    globs: ["**/*.feature"]
+    globs: ['**/*.feature']
     action: collapse
   docs:
-    globs: ["**/*.md", "**/*.mdx", "docs/**"]
+    globs: ['**/*.md', '**/*.mdx', 'docs/**']
     action: hide
   generated:
-    globs: ["**/*.pb.go", "**/*.generated.*", "**/gen/**", "**/generated/**"]
+    globs: ['**/*.generated.*', '**/generated/**', '**/package-lock.json']
     action: hide
   server:
-    globs: ["server/**"]
+    globs: ['server/**']
     action: visible
 ```
 
-- `defaultView` is optional. When set, listed categories start expanded and every other category starts hidden (as in, gone, zero scroll space). When it's absent, each category's `action` sets its starting state - and the built-in defaults already amount to code-only reading: `tests` → collapse (Go-style `foo_test.go` included), `specs` → collapse (`**/*.feature`), `docs` → hide, `generated` → hide (that last one includes `**/package-lock.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/go.sum` and `**/Cargo.lock`).
-- First matching rule wins. Unmatched files land in the implicit `code` category, always listed last in the bar.
-- Unknown actions and keys are ignored.
+First matching rule wins. Everything else is `code`. Actions are `visible`, `collapse`, or `hide`. Bad config falls back to the defaults; private repos work too.
 
-## Development
+Optional `defaultView: [code, server]` starts just those categories expanded and hides the rest. Virtualized pages still keep the compact headers. Your saved choices override these defaults.
+
+## Work on it locally
 
 ```sh
-npm install        # also runs `wxt prepare` (types)
-npm run build      # outputs .output/chrome-mv3/
-npm test           # vitest: classifier, config parser, state-cycle unit tests
-npm run dev        # watch mode with auto-reload
-npm run test:e2e   # live smoke test against github.com (see below)
+npm ci
+npm run dev:preview
 ```
 
-### The e2e smoke test
+Open [localhost:4173](http://127.0.0.1:4173). It runs the real content script against local GitHub fixtures and reloads when you edit. No account or extension install needed.
 
-`npm run test:e2e` runs `e2e/smoke.mjs`: a `playwright-core` script that loads the built extension into a persistent browser context and checks the My PRs tab, impact bar, chip cycling and soft-nav behaviour against live github.com. Screenshots land in `e2e/screenshots/` (gitignored).
+Useful pages:
 
-Browser notes, earned the hard way: branded Chrome ≥ 137 ignores `--load-extension`, and Arc flatly refuses Playwright's CDP launch. The script therefore uses the **Chrome for Testing** binary already sitting in the Playwright cache (`~/Library/Caches/ms-playwright/chromium-1228/...`) in new headless mode. Nothing gets downloaded.
+- [PR overview](http://127.0.0.1:4173/acme/review-kit/pull/42)
+- [Virtualized changes](http://127.0.0.1:4173/acme/review-kit/pull/42/changes?mode=virtualization)
+- [Settings](http://127.0.0.1:4173/popup.html)
+- [Screenshots](http://127.0.0.1:4173/screenshots/)
+- [Visual comparisons](http://127.0.0.1:4173/visual/)
 
-Logged-out limitations: GitHub redirects `/pull/<n>/changes` to `/files` when you're not logged in, so the React files view isn't covered by the e2e run. And `author:@me` redirects to `/pulls/@me`, so the tab's selected state gets exercised via a spoofed URL and a synthetic `turbo:render` instead of a real navigation.
+The toolbar switches themes and GitHub layouts, adds 250 files, remounts files, and replaces headers. Add `?scenario=partial` to exercise a failed inventory download. `?scenario=unmeasured` renders loading skeletons with no file statistics. `PRIX_PORT` changes the port.
 
-Stack: [WXT](https://wxt.dev) + TypeScript, [dom-chef](https://github.com/vadimdemedes/dom-chef) for TSX-to-DOM UI, [picomatch](https://github.com/micromatch/picomatch) for globs, [yaml](https://github.com/eemeli/yaml) for config parsing. No background service worker - one content script at `document_start`, CSS injected via the manifest so there's no flash of unstyled page.
+### Keep it working
 
-## Loading a dev build in Arc
+```sh
+npm run check                  # Oxlint, Oxfmt, TypeScript, unit/DOM/release tests
+npm run lint:fix               # automatic lint fixes
+npm run fmt                    # format everything
+npm run test:browser:install    # install Chromium once
+npm run screenshots            # browser checks + screenshots
+npm run test:visual             # compare against checked-in screenshots
+npm run test:extension          # build and test the actual extension
+```
 
-1. Run `npm run build`.
-2. Open `arc://extensions`.
-3. Enable **Developer mode** (top right).
-4. **Load unpacked** → select this project's `.output/chrome-mv3` directory.
-5. After changes: `npm run build` again, hit the extension's **reload** button on `arc://extensions`, refresh the GitHub tab.
+CI runs the checks on Linux and macOS, including both sets of screenshot baselines. Screenshots are uploaded even when a test fails. `PRIX_BROWSER` picks a different Chromium executable; production-extension tests need a browser that allows loading unpacked extensions.
+
+For a deliberate visual change, inspect the screenshots, then run `npm run test:visual:update` on the matching OS and commit the changed baselines. Don’t update them just to make a red check green.
+
+`npm run test:e2e` runs the optional live GitHub smoke tests after a build. Logged-out GitHub redirects some React pages, so the local fixtures cover those cases. Fixtures won’t tell us when GitHub changes its DOM again.
+
+### Load your build in Arc
+
+```sh
+npm run build                  # .output/chrome-mv3/
+npm run package                # dist/pr-impact-chrome-mv3.zip
+npm run package -- firefox     # dist/pr-impact-firefox-mv2.zip
+```
+
+Load `.output/chrome-mv3` from `arc://extensions` with Developer mode on. After changes, rebuild, reload the extension, and refresh the GitHub tab. `npm run dev` is WXT’s extension watch mode.
+
+## Cut a release
+
+Merging to `main` is enough for a fresh downloadable build. For a named version:
+
+```sh
+git switch main
+git pull --ff-only
+npm run release -- 0.2.0
+```
+
+That tags the current commit as `v0.2.0` and pushes the tag. The command refuses a dirty checkout, an existing tag, or a local `main` that differs from the remote. Add `--dry-run` to check without changing anything.
+
+GitHub Actions runs the checks, builds all three browser downloads, adds checksums, and publishes a release with generated notes. The tag supplies the version inside the extension; `package.json` supplies the version for ordinary dev and main builds. Use three numbers, like `0.2.0`.
+
+Only the publish job has repository write access. Tests and packaging use read-only tokens. Rolling downloads are updated in place, stay marked as prereleases, and point to the exact tested commit.
+
+## If it breaks
+
+Turn it off in Settings. If you can’t get there, run this in the GitHub page’s console and reload:
+
+```js
+localStorage.setItem('prix-disabled', '1');
+```
+
+Remove that key and reload to bring it back. Logs start with `[PR Impact]`; include those and any React errors in a bug report.
+
+Built with WXT, TypeScript, dom-chef, picomatch, and YAML. Playwright handles the browser tests. No UI framework shipped to GitHub.
+
+## Local AI?
+
+Investigated it. Browser-local search, questions about a diff, and a small review look doable. Nothing downloads or runs yet. The [investigation](docs/browser-ai.md) covers models, sizes, architecture, and what we need to measure before shipping it.

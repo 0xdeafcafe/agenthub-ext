@@ -13,7 +13,8 @@ export interface BarHandlers {
   onCycle: (category: string) => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
-  onCopy: () => void;
+  onCopy: () => void | Promise<void>;
+  onFocus?: () => void;
   onJump: (direction: 1 | -1) => void;
 }
 
@@ -27,17 +28,17 @@ const PALETTE = [
   'var(--bgColor-severe-emphasis, #bc4c00)',
 ];
 const CODE_COLOR = 'var(--bgColor-neutral-emphasis, #6e7781)';
+export const categoryColor = (name: string, index: number): string =>
+  name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length];
 
 // Octicon paths (unfold, fold, chevron-up, chevron-down, copy) - 16px viewBox
 const ICONS = {
   unfold:
     'm8.177.677 2.896 2.896a.25.25 0 0 1-.177.427H8.75v1.25a.75.75 0 0 1-1.5 0V4H5.104a.25.25 0 0 1-.177-.427L7.823.677a.25.25 0 0 1 .354 0ZM7.25 10.75a.75.75 0 0 1 1.5 0V12h2.146a.25.25 0 0 1 .177.427l-2.896 2.896a.25.25 0 0 1-.354 0l-2.896-2.896A.25.25 0 0 1 5.104 12H7.25v-1.25Zm-5-2a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM6 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 6 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM12 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 12 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 1 0 1.5h.5Z',
-  fold:
-    'M10.896 2H8.75V.75a.75.75 0 0 0-1.5 0V2H5.104a.25.25 0 0 0-.177.427l2.896 2.896a.25.25 0 0 0 .354 0l2.896-2.896A.25.25 0 0 0 10.896 2ZM8.75 15.25a.75.75 0 0 1-1.5 0V14H5.104a.25.25 0 0 1-.177-.427l2.896-2.896a.25.25 0 0 1 .354 0l2.896 2.896a.25.25 0 0 1-.177.427H8.75v1.25Zm-6.5-6.5a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM6 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 6 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM12 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 12 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 1 0 1.5h.5Z',
+  fold: 'M10.896 2H8.75V.75a.75.75 0 0 0-1.5 0V2H5.104a.25.25 0 0 0-.177.427l2.896 2.896a.25.25 0 0 0 .354 0l2.896-2.896A.25.25 0 0 0 10.896 2ZM8.75 15.25a.75.75 0 0 1-1.5 0V14H5.104a.25.25 0 0 1-.177-.427l2.896-2.896a.25.25 0 0 1 .354 0l2.896 2.896a.25.25 0 0 1-.177.427H8.75v1.25Zm-6.5-6.5a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM6 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 6 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 0 0 1.5h.5ZM12 8a.75.75 0 0 1-.75.75h-.5a.75.75 0 0 1 0-1.5h.5A.75.75 0 0 1 12 8Zm2.25.75a.75.75 0 0 0 0-1.5h-.5a.75.75 0 0 1 0 1.5h.5Z',
   up: 'M3.22 10.53a.749.749 0 0 1 0-1.06l4.25-4.25a.749.749 0 0 1 1.06 0l4.25 4.25a.749.749 0 1 1-1.06 1.06L8 6.811 4.28 10.53a.749.749 0 0 1-1.06 0Z',
-  down: 'M12.78 5.22a.749.749 0 0 1 0-1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0Z',
-  copy:
-    'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25ZM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z',
+  down: 'M3.22 5.22a.75.75 0 0 1 1.06 0L8 8.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.22 6.28a.75.75 0 0 1 0-1.06Z',
+  copy: 'M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25ZM5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z',
 } as const;
 
 function octicon(pathData: string): SVGElement {
@@ -56,6 +57,14 @@ function controlButton(icon: string, title: string, onClick: () => void): HTMLBu
   ) as unknown as HTMLButtonElement;
   button.addEventListener('click', onClick);
   return button;
+}
+
+function setText(element: Element, text: string): void {
+  if (element.textContent !== text) element.textContent = text;
+}
+
+function setAttribute(element: Element, name: string, value: string): void {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 
 /** Matches the PR header's tab row (Conversation / Commits / Files changed). */
@@ -90,11 +99,17 @@ function isBelowHeader(parent: Element, child: Element): boolean {
  * isBelowHeader). If nothing block-flow was found below that point we
  * return null - better no bar than a mangled page.
  */
-export function findBarPlacement(anchor: Element): {parent: Element; before: Element | null} | null {
+export function findBarPlacement(
+  anchor: Element,
+): {parent: Element; before: Element | null} | null {
   let child: Element = anchor;
   let parent = anchor.parentElement;
   let deepestBlock: {parent: Element; before: Element | null} | null = null;
-  for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+  for (
+    let hops = 0;
+    parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body;
+    hops++
+  ) {
     if (hops > 0 && !isBelowHeader(parent, child)) {
       // Climbed into an ancestor whose PR header sits at or below our
       // insertion point - above the region the bar belongs to.
@@ -130,7 +145,11 @@ export function spanningBarPlacement(
 ): {parent: Element; before: Element | null} | null {
   let child: Element = anchor;
   let parent = anchor.parentElement;
-  for (let hops = 0; parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body; hops++) {
+  for (
+    let hops = 0;
+    parent && hops < 8 && parent.tagName !== 'MAIN' && parent !== document.body;
+    hops++
+  ) {
     if (hops > 0 && !isBelowHeader(parent, child)) {
       return null;
     }
@@ -168,6 +187,14 @@ export class ImpactBar {
   readonly #segments = new Map<string, HTMLElement>();
   readonly #chips = new Map<string, HTMLElement>();
   readonly #chipMeta = new Map<string, HTMLSpanElement>();
+  readonly #chipState = new Map<string, HTMLElement>();
+  readonly #summary: HTMLElement;
+  readonly #status: HTMLElement;
+  readonly #progress: HTMLProgressElement;
+  readonly #copy: HTMLButtonElement;
+  readonly #focus: HTMLButtonElement;
+  readonly #expand: HTMLButtonElement;
+  #copyTimer: ReturnType<typeof setTimeout> | undefined;
   readonly #totals: HTMLSpanElement;
   readonly #chartLine: HTMLElement;
   readonly #diffstat: HTMLElement;
@@ -177,18 +204,57 @@ export class ImpactBar {
   readonly #diffstatBlocks: HTMLElement[];
 
   constructor(categories: string[], handlers: BarHandlers) {
+    categories = [...new Set(categories)];
     this.#categories = categories;
 
-    this.#totals = <span className="prix-totals" /> as unknown as HTMLSpanElement;
+    this.#totals = (<span className="prix-totals" />) as unknown as HTMLSpanElement;
     this.#chartLine = (<div className="prix-chart" hidden />) as unknown as HTMLElement;
+    this.#summary = (<span className="prix-summary" />) as HTMLElement;
+    this.#status = (
+      <span className="prix-status" role="status" aria-live="polite" />
+    ) as HTMLElement;
+    this.#progress = (
+      <progress className="prix-progress" max="100" value="0" aria-label="Files reviewed" />
+    ) as unknown as HTMLProgressElement;
+    this.#copy = controlButton(ICONS.copy, 'Copy impact report as markdown', () => {
+      void this.#copyReport(handlers);
+    });
+    this.#copy.classList.add('prix-copy');
+    const copyLabel = document.createElement('span');
+    copyLabel.textContent = 'Copy report';
+    this.#copy.append(copyLabel);
+    this.#focus = (
+      <button
+        type="button"
+        className="prix-preset"
+        title="Expand code and collapse everything else"
+      >
+        Focus code
+      </button>
+    ) as unknown as HTMLButtonElement;
+    this.#focus.addEventListener('click', () => handlers.onFocus?.());
+    this.#focus.hidden = !handlers.onFocus;
+    this.#expand = (
+      <button type="button" className="prix-preset prix-control" aria-label="Expand all categories">
+        Show all
+      </button>
+    ) as unknown as HTMLButtonElement;
+    this.#expand.addEventListener('click', handlers.onExpandAll);
 
     // Condensed diffstat (GitHub's "+N −M" + proportion blocks, shrunk):
     // original totals vs the lines still visible under the current filters.
     // Only shown while filtering actually removes lines from view.
-    this.#diffstatOrig = <span className="prix-diffstat-orig" /> as unknown as HTMLSpanElement;
-    this.#diffstatShownAdded = <span className="prix-diffstat-added" /> as unknown as HTMLSpanElement;
-    this.#diffstatShownRemoved = <span className="prix-diffstat-removed" /> as unknown as HTMLSpanElement;
-    this.#diffstatBlocks = Array.from({length: 5}, () => (<span className="prix-diffstat-block" />) as HTMLElement);
+    this.#diffstatOrig = (<span className="prix-diffstat-orig" />) as unknown as HTMLSpanElement;
+    this.#diffstatShownAdded = (
+      <span className="prix-diffstat-added" />
+    ) as unknown as HTMLSpanElement;
+    this.#diffstatShownRemoved = (
+      <span className="prix-diffstat-removed" />
+    ) as unknown as HTMLSpanElement;
+    this.#diffstatBlocks = Array.from(
+      {length: 5},
+      () => (<span className="prix-diffstat-block" />) as HTMLElement,
+    );
     this.#diffstat = (
       <span className="prix-diffstat" hidden>
         {this.#diffstatOrig}
@@ -200,17 +266,29 @@ export class ImpactBar {
     ) as unknown as HTMLElement;
 
     this.element = (
-      <div className="prix-bar" id="prix-bar">
+      <section className="prix-bar" id="prix-bar" aria-label="PR Impact review controls">
         <div className="prix-bar-header">
-          <span className="prix-bar-title">Impact</span>
-          {this.#diffstat}
-          {this.#totals}
+          <div className="prix-heading">
+            <span className="prix-brand" aria-hidden="true">
+              {octicon(ICONS.unfold)}
+            </span>
+            <div>
+              <span className="prix-bar-title">Review focus</span>
+              {this.#totals}
+            </div>
+          </div>
+          <div className="prix-actions">
+            <div className="prix-presets" role="group" aria-label="Review presets">
+              {this.#focus}
+              {this.#expand}
+            </div>
+            {controlButton(ICONS.fold, 'Collapse all categories', handlers.onCollapseAll)}
+            {this.#copy}
+          </div>
         </div>
         <div className="prix-bar-track">
           {categories.map((name, index) => {
-            const segment = (
-              <div className="prix-segment" data-category={name} />
-            ) as HTMLElement;
+            const segment = (<div className="prix-segment" data-category={name} />) as HTMLElement;
             segment.style.backgroundColor =
               name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length];
             this.#segments.set(name, segment);
@@ -219,38 +297,71 @@ export class ImpactBar {
         </div>
         <div className="prix-bar-legend">
           {categories.map((name, index) => {
-            const meta = <span className="prix-chip-meta" /> as unknown as HTMLSpanElement;
+            const meta = (<span className="prix-chip-meta" />) as unknown as HTMLSpanElement;
+            const state = (<span className="prix-chip-state" aria-hidden="true" />) as HTMLElement;
             const chip = (
               <button type="button" className="prix-chip" data-category={name} data-state="visible">
                 <span className="prix-dot" />
                 <span className="prix-chip-name">{name}</span>
                 {meta}
+                {state}
               </button>
             ) as unknown as HTMLElement;
             // The category colour as a custom property so CSS can render the
             // hollow-dot states (border in the category colour) without JS
-            chip.style.setProperty('--prix-cat', name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length]);
+            chip.style.setProperty(
+              '--prix-cat',
+              name === 'code' ? CODE_COLOR : PALETTE[index % PALETTE.length],
+            );
             chip.addEventListener('click', () => {
               handlers.onCycle(name);
             });
             this.#chips.set(name, chip);
             this.#chipMeta.set(name, meta);
+            this.#chipState.set(name, state);
             return chip;
           })}
-          <span className="prix-spacer" />
-          {controlButton(ICONS.up, 'Previous visible file (Shift+K)', () => {
-            handlers.onJump(-1);
-          })}
-          {controlButton(ICONS.down, 'Next visible file (Shift+J)', () => {
-            handlers.onJump(1);
-          })}
-          {controlButton(ICONS.unfold, 'Expand all categories', handlers.onExpandAll)}
-          {controlButton(ICONS.fold, 'Collapse all categories', handlers.onCollapseAll)}
-          {controlButton(ICONS.copy, 'Copy impact report as markdown', handlers.onCopy)}
         </div>
+        <div className="prix-bar-footer">
+          <div className="prix-focus-summary">
+            {this.#summary}
+            {this.#diffstat}
+          </div>
+          <div className="prix-navigation">
+            {this.#progress}
+            <span className="prix-shortcut" title="Shift+J / Shift+K">
+              Jump to file
+            </span>
+            {controlButton(ICONS.up, 'Previous visible file (Shift+K)', () => handlers.onJump(-1))}
+            {controlButton(ICONS.down, 'Next visible file (Shift+J)', () => handlers.onJump(1))}
+          </div>
+        </div>
+        {this.#status}
         {this.#chartLine}
-      </div>
+      </section>
     ) as unknown as HTMLElement;
+  }
+
+  async #copyReport(handlers: BarHandlers): Promise<void> {
+    if (this.#copy.disabled) return;
+    clearTimeout(this.#copyTimer);
+    this.#copy.disabled = true;
+    try {
+      await handlers.onCopy();
+      setText(this.#status, 'Report copied to clipboard');
+      this.#status.dataset.tone = 'success';
+    } catch {
+      setText(this.#status, 'Couldn’t copy. Allow clipboard access, then try again.');
+      this.#status.dataset.tone = 'error';
+    } finally {
+      this.#copy.disabled = false;
+      this.#copyTimer = setTimeout(() => setText(this.#status, ''), 5000);
+    }
+  }
+
+  destroy(): void {
+    clearTimeout(this.#copyTimer);
+    this.element.remove();
   }
 
   /** Language "PR Impact Map" summary line, shown under the legend when the PR has one. */
@@ -262,18 +373,24 @@ export class ImpactBar {
 
     this.#chartLine.hidden = false;
     this.#chartLine.textContent = `Impact Map: ${map.categories
-      .map(category => `${category.name} ${category.share}%`)
+      .map((category) => `${category.name} ${category.share}%`)
       .join(' · ')}`;
     this.#chartLine.title = `Posted by the Language bot on this PR (${map.totalFiles} files, +${map.totalAdded} / -${map.totalRemoved})`;
   }
 
-  update(counts: ReadonlyMap<string, CategoryCount>, stateOf: (category: string) => DisplayState): void {
+  update(
+    counts: ReadonlyMap<string, CategoryCount>,
+    stateOf: (category: string) => DisplayState,
+    visibleCounts?: ReadonlyMap<string, CategoryCount>,
+    lineCountsKnown = true,
+  ): void {
     let totalAdded = 0;
     let totalRemoved = 0;
     let totalFiles = 0;
     let totalReviewed = 0;
     let shownAdded = 0;
     let shownRemoved = 0;
+    let shownFiles = 0;
     let filtering = false;
     for (const name of this.#categories) {
       const count = counts.get(name) ?? {files: 0, added: 0, removed: 0, reviewed: 0};
@@ -288,17 +405,29 @@ export class ImpactBar {
       }
 
       if (state === 'visible') {
+        shownFiles += count.files;
         shownAdded += count.added;
         shownRemoved += count.removed;
       }
     }
 
+    if (visibleCounts) {
+      shownAdded = 0;
+      shownRemoved = 0;
+      shownFiles = 0;
+      for (const count of visibleCounts.values()) {
+        shownAdded += count.added;
+        shownRemoved += count.removed;
+        shownFiles += count.files;
+      }
+      filtering = shownFiles < totalFiles;
+    }
     const totalLines = totalAdded + totalRemoved;
     const shownLines = shownAdded + shownRemoved;
 
     // Line counts drive segment widths/percentages; when nothing was
     // parseable (unmounted/virtualized rows) fall back to file counts.
-    const useLines = totalLines > 0;
+    const useLines = lineCountsKnown && totalLines > 0;
     const total = useLines ? totalLines : totalFiles;
 
     for (const name of this.#categories) {
@@ -308,42 +437,87 @@ export class ImpactBar {
       const state = stateOf(name);
 
       const segment = this.#segments.get(name)!;
-      segment.style.flexGrow = String(count.files > 0 ? share : 0);
-      segment.hidden = count.files === 0;
+      const grow = String(count.files > 0 ? share : 0);
+      if (segment.style.flexGrow !== grow) segment.style.flexGrow = grow;
+      if (segment.hidden !== (count.files === 0)) segment.hidden = count.files === 0;
+      setAttribute(segment, 'data-state', state);
 
       const filesText = `${count.files} ${count.files === 1 ? 'file' : 'files'}`;
       const linesText = lines > 0 ? ` · ${lines} lines` : '';
-      const percent = `${Math.round(share * 100)}%`;
+      const percent = `${Math.round(share * 100)}%${lineCountsKnown ? '' : ' of files'}`;
       const shareText = total > 0 && count.files > 0 ? ` · ${percent}` : '';
-      const reviewedText = count.reviewed > 0 ? ` · ${count.reviewed} of ${count.files} reviewed` : '';
+      const reviewedText =
+        count.reviewed > 0 ? ` · ${count.reviewed} of ${count.files} reviewed` : '';
       const detail = `${name} - ${filesText}${linesText}${shareText}${reviewedText}`;
 
       // The chip shows name + percentage only; the full breakdown and the
       // cycle explanation live in the tooltip and aria-label.
-      const NEXT_ACTION: Record<DisplayState, string> = {visible: 'collapse', collapsed: 'hide', hidden: 'show'};
+      const NEXT_ACTION: Record<DisplayState, string> = {
+        visible: 'collapse',
+        collapsed: 'hide',
+        hidden: 'show',
+      };
       const chip = this.#chips.get(name)!;
-      chip.dataset.state = state;
-      chip.hidden = count.files === 0;
-      chip.title = `${detail} - click to cycle visible → collapsed → hidden`;
-      chip.setAttribute('aria-label', `${name}, ${percent}, ${state} - click to ${NEXT_ACTION[state]}`);
-      this.#chipMeta.get(name)!.textContent = percent;
-      segment.title = detail;
+      setAttribute(chip, 'data-state', state);
+      if (chip.hidden !== (count.files === 0)) chip.hidden = count.files === 0;
+      setAttribute(chip, 'title', `${detail} - click to cycle visible → collapsed → hidden`);
+      setAttribute(
+        chip,
+        'aria-label',
+        `${name}, ${percent}, ${state} - click to ${NEXT_ACTION[state]}`,
+      );
+      setText(this.#chipMeta.get(name)!, percent);
+      setText(
+        this.#chipState.get(name)!,
+        state === 'visible' ? 'Expanded' : state === 'collapsed' ? 'Collapsed' : 'Hidden',
+      );
+      setAttribute(segment, 'title', detail);
     }
 
-    this.#totals.textContent =
-      `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${totalLines} lines` +
-      (totalReviewed > 0 ? ` · ${totalReviewed} reviewed` : '');
+    setText(
+      this.#totals,
+      `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${lineCountsKnown ? `${totalLines} lines` : 'line counts incomplete'}` +
+        (totalReviewed > 0 ? ` · ${totalReviewed} reviewed` : ''),
+    );
+    const reduction =
+      lineCountsKnown && totalLines > 0 ? Math.round((1 - shownLines / totalLines) * 100) : 0;
+    setText(
+      this.#summary,
+      totalFiles === 0
+        ? 'Waiting for files…'
+        : filtering
+          ? `${shownFiles} of ${totalFiles} files expanded${reduction > 0 ? ` · ${reduction}% fewer lines` : ''}`
+          : 'All files expanded',
+    );
+    this.#progress.value = totalFiles > 0 ? (totalReviewed / totalFiles) * 100 : 0;
+    this.#progress.title = `${totalReviewed} of ${totalFiles} files reviewed`;
+    this.#progress.setAttribute('aria-valuetext', this.#progress.title);
+    this.#progress.hidden = totalReviewed === 0;
+    setAttribute(this.#expand, 'aria-pressed', String(totalFiles > 0 && !filtering));
+    setAttribute(
+      this.#focus,
+      'aria-pressed',
+      String(
+        totalFiles > 0 &&
+          this.#categories.every(
+            (name) => stateOf(name) === (name === 'code' ? 'visible' : 'collapsed'),
+          ),
+      ),
+    );
 
     // Condensed diffstat: only while filtering removes lines from view, and
     // only when line counts exist to compare (unparsed/virtualised rows can
     // leave everything at 0 - file counts would make a nonsense diffstat).
-    if (!filtering || totalLines === 0 || shownLines === totalLines) {
+    if (!lineCountsKnown || !filtering || totalLines === 0 || shownLines === totalLines) {
       this.#diffstat.hidden = true;
     } else {
       this.#diffstat.hidden = false;
-      this.#diffstatOrig.textContent = `+${totalAdded.toLocaleString('en-US')} −${totalRemoved.toLocaleString('en-US')}`;
-      this.#diffstatShownAdded.textContent = `+${shownAdded.toLocaleString('en-US')}`;
-      this.#diffstatShownRemoved.textContent = `−${shownRemoved.toLocaleString('en-US')}`;
+      setText(
+        this.#diffstatOrig,
+        `+${totalAdded.toLocaleString('en-US')} −${totalRemoved.toLocaleString('en-US')}`,
+      );
+      setText(this.#diffstatShownAdded, `+${shownAdded.toLocaleString('en-US')}`);
+      setText(this.#diffstatShownRemoved, `−${shownRemoved.toLocaleString('en-US')}`);
       const filled = Math.round((shownLines / totalLines) * this.#diffstatBlocks.length);
       this.#diffstatBlocks.forEach((block, index) => {
         block.classList.toggle('prix-diffstat-block--filled', index < filled);

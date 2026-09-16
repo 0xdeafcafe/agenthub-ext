@@ -9,7 +9,23 @@
     "postinstall": "wxt prepare",
     "test": "vitest run",
     "test:e2e": "node e2e/smoke.mjs",
-    "compile": "tsc --noEmit"
+    "compile": "tsc --noEmit",
+    "dev:preview": "node dev/server.mjs",
+    "test:local": "node e2e/local.mjs",
+    "screenshots": "node e2e/local.mjs && node e2e/features.mjs && node e2e/pages.mjs",
+    "test:browser:install": "playwright-core install chromium",
+    "test:extension": "npm run build && node e2e/extension.mjs",
+    "test:features": "node e2e/features.mjs",
+    "test:visual": "node e2e/visual.mjs",
+    "test:visual:update": "node e2e/visual.mjs --update",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives .",
+    "lint:fix": "npm run lint -- --fix",
+    "fmt": "oxfmt --write .",
+    "fmt:check": "oxfmt --check .",
+    "check": "npm run lint && npm run fmt:check && npm run compile && npm test",
+    "test:pages": "node e2e/pages.mjs",
+    "package": "node scripts/package.mjs",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "dom-chef": "^5.0.1",
@@ -17,9 +33,16 @@
     "yaml": "^2.8.0"
   },
   "devDependencies": {
+    "@fontsource/inter": "^5.3.0",
     "@types/picomatch": "^4.0.3",
+    "esbuild": "^0.28.2",
     "jsdom": "^29.1.1",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "pixelmatch": "^7.2.0",
     "playwright-core": "^1.62.1",
+    "pngjs": "^7.0.0",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
     "wxt": "^0.20.6"

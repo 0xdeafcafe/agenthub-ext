@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 import {describe, expect, it} from 'vitest';
-import {displayCounts, extractHeadSha, isCacheFresh, prCacheKey, trimCache, type PrCacheEntry} from './pr-cache';
+import {
+  displayCounts,
+  extractHeadSha,
+  extractBaseSha,
+  isCacheFresh,
+  prCacheKey,
+  trimCache,
+  type PrCacheEntry,
+} from './pr-cache';
 
-const count = (files: number, lines = 0): {files: number; added: number; removed: number; reviewed: number} => ({
+const count = (
+  files: number,
+  lines = 0,
+): {files: number; added: number; removed: number; reviewed: number} => ({
   files,
   added: lines,
   removed: 0,
@@ -16,15 +27,17 @@ describe('prCacheKey', () => {
 });
 
 describe('isCacheFresh', () => {
-  it('is fresh when SHAs match or either side lacks one', () => {
-    expect(isCacheFresh({sha: 'abc123'}, 'abc123')).toBe(true);
-    expect(isCacheFresh({sha: 'abc123'}, null)).toBe(true);
-    expect(isCacheFresh({sha: null}, 'abc123')).toBe(true);
-    expect(isCacheFresh({sha: null}, null)).toBe(true);
+  const entry = {sha: 'abc1234', baseSha: 'def5678'};
+  it('reuses counts only when the entire comparison is known and unchanged', () => {
+    expect(isCacheFresh(entry, 'abc1234', 'def5678')).toBe(true);
+    expect(isCacheFresh(entry, 'abc1234', '9999999')).toBe(false);
+    expect(isCacheFresh(entry, '9999999', 'def5678')).toBe(false);
   });
-
-  it('is stale when both SHAs are known and differ', () => {
-    expect(isCacheFresh({sha: 'abc123'}, 'def456')).toBe(false);
+  it('rejects legacy entries and comparisons with unknown revisions', () => {
+    expect(isCacheFresh({sha: 'abc1234'}, 'abc1234', 'def5678')).toBe(false);
+    expect(isCacheFresh(entry, 'abc1234', null)).toBe(false);
+    expect(isCacheFresh(entry, null, 'def5678')).toBe(false);
+    expect(isCacheFresh({sha: null}, null, null)).toBe(false);
   });
 });
 
@@ -88,6 +101,12 @@ describe('extractHeadSha', () => {
   it('finds the other spellings', () => {
     expect(extractHeadSha(doc('{"headRefOid":"abc1234"}'))).toBe('abc1234');
     expect(extractHeadSha(doc('{"head_sha":"deadbeef"}'))).toBe('deadbeef');
+  });
+
+  it('reads the base revision independently of the head', () => {
+    expect(extractBaseSha(doc('{"headSha":"8ecd2b6f","baseSha":"abc1234"}'))).toBe('abc1234');
+    expect(extractBaseSha(doc('{"baseRefOid":"deadbeef"}'))).toBe('deadbeef');
+    expect(extractBaseSha(doc('{"headSha":"abc1234"}'))).toBeNull();
   });
 
   it('returns null when no SHA is embedded', () => {
