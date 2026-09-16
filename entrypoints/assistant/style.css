@@ -301,6 +301,49 @@ h2 {
   line-height: 1.65;
   font-size: 12px;
 }
+.answer p {
+  margin: 0 0 9px;
+}
+.answer h3 {
+  font-size: 13px;
+  margin: 14px 0 6px;
+}
+.answer ul,
+.answer ol {
+  padding-left: 22px;
+  white-space: normal;
+}
+.answer code {
+  font:
+    11px/1.6 ui-monospace,
+    SFMono-Regular,
+    monospace;
+  background: var(--surface);
+  border-radius: 3px;
+  padding: 1px 3px;
+}
+.answer pre {
+  overflow: auto;
+  background: var(--surface);
+  padding: 10px;
+  border-radius: 6px;
+}
+.answer .citation {
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  font-size: inherit;
+  color: var(--accent);
+}
+.answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.answer-actions button {
+  font-size: 11px;
+}
 .answer-status {
   font-size: 10px;
   color: var(--muted);
@@ -357,10 +400,6 @@ h2 {
 .result-list .source {
   border: 1px solid var(--border);
   border-radius: 8px;
-}
-.compare {
-  font-size: 11px;
-  margin-top: 10px;
 }
 .composer {
   padding: 12px 14px 14px;

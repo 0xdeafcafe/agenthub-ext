@@ -1,7 +1,7 @@
 import './style.css';
-import {browser} from 'wxt/browser';
 import {createModelWorker} from '../../lib/ai/create-worker';
-import {MODELS, MODEL_ORIGINS, modelById, type ModelId} from '../../lib/ai/models';
+import {MODELS, modelById, type ModelId} from '../../lib/ai/models';
+import {renderAnswer} from '../../lib/ai/render-answer';
 import {
   QUICK_QUESTIONS,
   searchChanges,
@@ -44,15 +44,24 @@ const messages = get('messages');
 const modelDetails = get<HTMLDetailsElement>('models');
 let index: SourceIndex | null = null;
 let revision = '';
-let downloadPermission = false;
 let worker: Worker | null = null;
 let job = 0;
 let operation: 'idle' | 'load' | 'generate' | 'remove' = 'idle';
 let active: ModelId | null = null;
 let installed = new Set<ModelId>();
+let partial = new Set<ModelId>();
 let lastQuestion = '';
 let queue: ModelId[] = [];
 let simulated = false;
+let stopping = false;
+let stopTimer: ReturnType<typeof setTimeout> | undefined;
+type AnswerRequest = {
+  question: string;
+  mode: TaskMode;
+  sources: SourceChunk[];
+  previousQuestion: string;
+};
+let pending: {request: AnswerRequest; model?: ModelId} | null = null;
 let answer: {
   element: HTMLElement;
   body: HTMLElement;
@@ -63,6 +72,7 @@ let answer: {
   model: ModelId;
   question: string;
   mode: TaskMode;
+  previousQuestion: string;
 } | null = null;
 const controls = new Map<
   ModelId,
@@ -85,10 +95,16 @@ const update = (): void => {
   get<HTMLButtonElement>('send').disabled = !index || busy;
   get<HTMLButtonElement>('send').textContent = active ? 'Ask' : 'Load a model';
   get<HTMLButtonElement>('stop').hidden = operation !== 'generate';
+  get<HTMLButtonElement>('stop').disabled = stopping;
+  get<HTMLButtonElement>('stop').textContent = stopping ? 'Stopping…' : 'Stop';
   get<HTMLButtonElement>('send').hidden = operation === 'generate';
   get<HTMLButtonElement>('refresh').disabled = busy;
   get<HTMLButtonElement>('unload').disabled = !active || busy;
   get<HTMLButtonElement>('install-both').disabled = busy || installed.size === MODELS.length;
+  question.disabled = busy;
+  mode.disabled = busy;
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-run-answer]'))
+    button.disabled = busy;
   get('active-model').textContent = active ? modelById(active).name : 'No model loaded';
   get('models-summary').textContent = simulated
     ? 'Development simulation'
@@ -96,11 +112,17 @@ const update = (): void => {
   for (const model of MODELS) {
     const control = controls.get(model.id)!;
     control.use.textContent =
-      active === model.id ? 'Active' : installed.has(model.id) ? 'Use' : 'Install';
+      active === model.id
+        ? 'Active'
+        : installed.has(model.id)
+          ? 'Use'
+          : partial.has(model.id)
+            ? 'Retry'
+            : 'Install';
     control.use.disabled = busy || active === model.id;
-    control.remove.disabled = busy || !installed.has(model.id);
-    control.remove.hidden = !installed.has(model.id);
-    control.info.textContent = `${(model.bytes / 1e9).toFixed(2)} GB · ${model.detail}`;
+    control.remove.disabled = busy;
+    control.remove.hidden = !installed.has(model.id) && !partial.has(model.id);
+    control.info.textContent = `${(model.bytes / 1e9).toFixed(2)} GB · ${partial.has(model.id) ? 'Incomplete download' : installed.has(model.id) ? 'Downloaded · available offline' : model.detail}`;
   }
 };
 function makeSources(sources: SourceChunk[], caption: string, open = false): HTMLElement {
@@ -122,7 +144,58 @@ function makeSources(sources: SourceChunk[], caption: string, open = false): HTM
   }
   return details;
 }
+function addAnswerActions(result: NonNullable<typeof answer>): void {
+  const actions = node('div', 'answer-actions');
+  const copy = node('button', '', 'Copy answer');
+  copy.type = 'button';
+  copy.addEventListener('click', () => {
+    const citations = result.used
+      .map(
+        (source) =>
+          `[${source.id}] ${source.path} · old ${source.oldStart}–${source.oldEnd}, new ${source.newStart}–${source.newEnd}`,
+      )
+      .join('\n');
+    void navigator.clipboard
+      .writeText(
+        `${result.question}\n\n${result.text}\n\n${modelById(result.model).name} · based on selected diff excerpts\n${citations}`,
+      )
+      .then(
+        () => say('Answer and source references copied.'),
+        () => say('Could not copy. Select the answer text and copy it manually.'),
+      );
+  });
+  actions.append(copy);
+  const request: AnswerRequest = {
+    question: result.question,
+    mode: result.mode,
+    sources: result.used,
+    previousQuestion: result.previousQuestion,
+  };
+  const run = (model: ModelId): void => {
+    if (isBusy()) return;
+    question.value = request.question;
+    mode.value = request.mode;
+    if (active === model) generate(request);
+    else {
+      pending = {request, model};
+      void loadModel(model);
+    }
+  };
+  const retry = node('button', 'retry', 'Retry');
+  retry.type = 'button';
+  retry.dataset.runAnswer = '';
+  retry.addEventListener('click', () => run(result.model));
+  const other = MODELS.find((model) => model.id !== result.model)!;
+  const compare = node('button', 'compare', `Compare with ${other.name}`);
+  compare.type = 'button';
+  compare.dataset.runAnswer = '';
+  compare.addEventListener('click', () => run(other.id));
+  actions.append(retry, compare);
+  result.element.append(actions);
+}
 function resetWorker(): void {
+  clearTimeout(stopTimer);
+  stopping = false;
   worker?.terminate();
   worker = null;
   active = null;
@@ -140,6 +213,7 @@ function ensureWorker(): Worker {
     const message = event.data;
     if (message.type === 'status') {
       installed = new Set(message.installed);
+      partial = new Set(message.partial ?? []);
       simulated = message.simulated === true;
       if (simulated) get('pr-title').textContent = 'Development simulation · no model is running';
       update();
@@ -150,9 +224,7 @@ function ensureWorker(): Worker {
       get('load-progress').hidden = false;
       document.querySelector<HTMLProgressElement>('#load-progress progress')!.value =
         message.progress;
-      get('load-message').textContent = message.text.startsWith('Downloading Gemma')
-        ? message.text
-        : `Preparing model · ${Math.round(message.progress * 100)}%`;
+      get('load-message').textContent = message.text;
     } else if (message.type === 'ready') {
       active = message.model;
       installed.add(active);
@@ -185,8 +257,13 @@ function ensureWorker(): Worker {
       const feed = get('conversation');
       if (feed.scrollHeight - feed.scrollTop - feed.clientHeight < 100) scroll();
     } else if (message.type === 'done') {
+      clearTimeout(stopTimer);
+      stopping = false;
       operation = 'idle';
       if (answer) {
+        answer.body.replaceChildren(
+          renderAnswer(answer.text, answer.used, (id) => post({type: 'open-source', id})),
+        );
         const refs = citedSources(answer.text, answer.used);
         const warning = refs.invalid.length
           ? `Unrecognized citations: ${refs.invalid.join(', ')}. Check this answer against the excerpts.`
@@ -194,60 +271,75 @@ function ensureWorker(): Worker {
             ? 'This answer has no valid citations. Check it against the supplied excerpts.'
             : '';
         if (warning) answer.element.append(node('p', 'answer-warning', warning));
+        if (message.truncated)
+          answer.element.append(
+            node(
+              'p',
+              'answer-warning',
+              'The answer reached its length limit. Retry with a smaller scope or a more specific question.',
+            ),
+          );
+        if (message.stopped)
+          answer.element.append(
+            node('p', 'answer-status', 'Stopped by you. This answer is incomplete.'),
+          );
         if (refs.valid.length)
           answer.element.append(
             makeSources(refs.valid, `Cited evidence · ${refs.valid.length} excerpts`),
           );
         answer.status.textContent += ` · ${(message.elapsedMs / 1000).toFixed(1)}s · first token ${(message.firstTokenMs / 1000).toFixed(1)}s${message.outputTokens ? ` · ${message.outputTokens} output tokens` : ''}`;
-        const other = MODELS.find((model) => model.id !== answer!.model)!;
-        const previous = answer;
-        const compare = node('button', 'compare', `Compare with ${other.name}`);
-        compare.type = 'button';
-        compare.addEventListener('click', () => {
-          if (isBusy()) return;
-          question.value = previous.question;
-          mode.value = previous.mode;
-          // Keep the same source set when comparing models.
-          comparison = {model: other.id, sources: previous.used};
-          if (active === other.id) {
-            generate(previous.used);
-            comparison = null;
-          } else void loadModel(other.id);
-        });
-        answer.element.append(compare);
-        lastQuestion = answer.question;
+        addAnswerActions(answer);
+        if (!message.stopped) lastQuestion = answer.question;
         answer = null;
       }
-      say('Answer ready. Verify suggestions against the linked code.');
+      say(
+        message.stopped
+          ? 'Stopped. The model is ready for another question.'
+          : 'Answer ready. Verify suggestions against the linked code.',
+      );
     } else if (message.type === 'unloaded' || message.type === 'removed') {
       operation = 'idle';
       if (message.type === 'unloaded') active = null;
     } else if (message.type === 'error') {
+      const failedOperation = operation;
       operation = 'idle';
       queue = [];
-      comparison = null;
       if (answer) {
         answer.body.textContent = answer.text || message.message;
         answer.element.append(node('p', 'answer-warning', message.message));
+        addAnswerActions(answer);
         answer = null;
       }
+      resetWorker();
+      if (failedOperation !== 'idle') ensureWorker();
       get('load-progress').hidden = true;
       get('model-message').textContent = message.message;
       get('model-message').dataset.error = 'true';
       say('Something went wrong. You can retry or keep using search.');
     }
     update();
-    if (message.type === 'ready' && comparison?.model === active) {
-      const sources = comparison.sources;
-      comparison = null;
-      generate(sources);
+    if (
+      message.type === 'ready' &&
+      operation === 'idle' &&
+      active &&
+      !queue.length &&
+      pending &&
+      (!pending.model || pending.model === active)
+    ) {
+      const next = pending;
+      pending = null;
+      // A newly queued question follows edits made before choosing a model.
+      // Retry/compare requests keep their original evidence and prior question.
+      generate(next.model ? next.request : undefined);
     }
   };
   worker.onerror = (event): void => {
     if (worker !== owner) return;
     queue = [];
-    comparison = null;
-    if (answer) answer.body.textContent += '\nModel stopped. Reload it to retry.';
+    if (answer) {
+      answer.body.textContent += '\nModel stopped. Reload it to retry.';
+      addAnswerActions(answer);
+    }
     answer = null;
     resetWorker();
     say(event.message || 'Model worker stopped. Try loading it again.');
@@ -255,7 +347,6 @@ function ensureWorker(): Worker {
   worker.postMessage({id: job, type: 'status'} satisfies WorkerRequest);
   return worker;
 }
-let comparison: {model: ModelId; sources: SourceChunk[]} | null = null;
 async function loadModel(model: ModelId): Promise<void> {
   if (isBusy()) return;
   resetWorker();
@@ -264,23 +355,13 @@ async function loadModel(model: ModelId): Promise<void> {
   update();
   modelDetails.open = true;
   get('load-progress').hidden = false;
+  document.querySelector<HTMLProgressElement>('#load-progress progress')!.value = 0;
+  get('load-message').textContent = 'Checking available storage…';
+  say(`Loading ${modelById(model).name}${pending ? ' for your question' : ''}…`);
   get('model-message').textContent = '';
   get('model-message').dataset.error = 'false';
   try {
-    // Called directly from a user gesture. Permission is restricted to model downloads.
-    const allowed =
-      downloadPermission || (await browser.permissions.request({origins: MODEL_ORIGINS}));
-    if (request !== job) return;
-    if (!allowed) {
-      operation = 'idle';
-      queue = [];
-      comparison = null;
-      get('load-progress').hidden = true;
-      update();
-      say('Download access was declined. Search is still available.');
-      return;
-    }
-    downloadPermission = true;
+    // Public model artifacts allow CORS. No broad model-host permissions are needed.
     const estimate = await navigator.storage.estimate();
     if (request !== job) return;
     if (
@@ -302,7 +383,6 @@ async function loadModel(model: ModelId): Promise<void> {
     get('load-progress').hidden = true;
     operation = 'idle';
     queue = [];
-    comparison = null;
     get('model-message').textContent =
       error instanceof Error ? error.message : 'Could not start the download.';
     get('model-message').dataset.error = 'true';
@@ -318,20 +398,29 @@ function candidates(): SourceChunk[] {
       : text;
   return selectContext(index, followup, mode.value as TaskMode, options());
 }
-function generate(supplied?: SourceChunk[]): void {
+function generate(request?: AnswerRequest): void {
   if (!index || isBusy()) return;
-  if (!active) {
-    modelDetails.open = true;
-    say('Install or load a model to ask. Search works without one.');
-    return;
-  }
+  if (!question.value.trim() && mode.value !== 'ask')
+    question.value = QUICK_QUESTIONS.find((quick) => quick.mode === mode.value)!.prompt;
   if (!question.value.trim()) {
     question.focus();
     return;
   }
-  const sources = supplied ?? candidates();
+  const sources = request?.sources ?? candidates();
   if (!sources.length) {
     say('No matching code. Try a file name or a more specific question.');
+    return;
+  }
+  request ??= {
+    question: question.value.trim(),
+    mode: mode.value as TaskMode,
+    sources,
+    previousQuestion: lastQuestion,
+  };
+  if (!active) {
+    pending = {request};
+    modelDetails.open = true;
+    say('Choose a model. Your question will run when it is ready.');
     return;
   }
   const article = node('article', 'message');
@@ -344,7 +433,7 @@ function generate(supplied?: SourceChunk[]): void {
   const status = node('p', 'answer-status');
   const sourceSection = node('div', '');
   article.append(
-    node('p', 'message-question', question.value.trim()),
+    node('p', 'message-question', request.question),
     header,
     body,
     status,
@@ -358,10 +447,11 @@ function generate(supplied?: SourceChunk[]): void {
     status,
     sources: sourceSection,
     text: '',
-    used: [],
+    used: sources,
     model: active,
-    question: question.value.trim(),
-    mode: mode.value as TaskMode,
+    question: request.question,
+    mode: request.mode,
+    previousQuestion: request.previousQuestion,
   };
   operation = 'generate';
   update();
@@ -372,7 +462,8 @@ function generate(supplied?: SourceChunk[]): void {
     type: 'generate',
     question: answer.question,
     sources,
-    previousQuestion: lastQuestion,
+    previousQuestion: request.previousQuestion,
+    mode: request.mode,
   } satisfies WorkerRequest);
 }
 function search(): void {
@@ -401,7 +492,7 @@ function clear(): void {
   messages.replaceChildren();
   answer = null;
   lastQuestion = '';
-  comparison = null;
+  pending = null;
   get('welcome').hidden = false;
   say(index ? 'Ready to search.' : 'Loading the diff…');
   update();
@@ -452,10 +543,12 @@ get('install-both').addEventListener('click', () => {
 });
 get('cancel-load').addEventListener('click', () => {
   queue = [];
-  comparison = null;
+  pending = null;
   resetWorker();
   ensureWorker();
-  say('Download cancelled. Installed models are kept.');
+  say(
+    'Download cancelled. Completed downloads are kept; incomplete ones can be retried or removed.',
+  );
 });
 get('unload').addEventListener('click', () => {
   resetWorker();
@@ -463,14 +556,23 @@ get('unload').addEventListener('click', () => {
   say('Model unloaded. Its download is kept.');
 });
 get('stop').addEventListener('click', () => {
-  if (answer)
-    answer.element.append(
-      node('p', 'answer-status', 'Stopped by you. Reload the model to continue.'),
-    );
-  answer = null;
-  resetWorker();
-  ensureWorker();
-  say('Stopped. The model download is kept.');
+  if (operation !== 'generate' || stopping) return;
+  stopping = true;
+  worker?.postMessage({id: job, type: 'stop'} satisfies WorkerRequest);
+  say('Stopping the answer…');
+  update();
+  stopTimer = setTimeout(() => {
+    if (answer) {
+      answer.element.append(
+        node('p', 'answer-status', 'Stopped. The model was unloaded because it did not respond.'),
+      );
+      addAnswerActions(answer);
+      answer = null;
+    }
+    resetWorker();
+    ensureWorker();
+    say('Stopped. Load the cached model to continue.');
+  }, 5000);
 });
 get('search').addEventListener('click', search);
 get('send').addEventListener('click', () => generate());
@@ -495,7 +597,19 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== parent || event.origin !== parentOrigin || event.data?.channel !== channel)
     return;
   const message = event.data;
-  if (message.type === 'context') {
+  if (message.type === 'suspend') {
+    queue = [];
+    pending = null;
+    if (answer) {
+      answer.element.append(node('p', 'answer-status', 'Stopped when the panel was closed.'));
+      addAnswerActions(answer);
+      answer = null;
+    }
+    resetWorker();
+    say('Conversation kept for this PR. Load a cached model to continue.');
+  } else if (message.type === 'resume') {
+    ensureWorker();
+  } else if (message.type === 'context') {
     const next = message.index as SourceIndex;
     if (!next || !Array.isArray(next.chunks) || !Array.isArray(next.files)) return;
     if (revision && revision !== next.revision) clear();

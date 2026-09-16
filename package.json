@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
+    "unpacked": "node scripts/unpacked.mjs",
     "postinstall": "wxt prepare",
     "test": "vitest run",
     "test:e2e": "node e2e/smoke.mjs",
@@ -30,7 +31,8 @@
     "prepackage": "node scripts/ai/assets.mjs",
     "predev": "node scripts/ai/assets.mjs",
     "test:assistant": "node e2e/assistant.mjs",
-    "test:ai:real": "node scripts/ai/bench.mjs"
+    "test:ai:real": "node scripts/ai/bench.mjs",
+    "test:ai:install": "node scripts/ai/install.mjs"
   },
   "dependencies": {
     "@litert-lm/core": "0.17.0",

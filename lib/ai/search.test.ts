@@ -193,6 +193,12 @@ describe('retrieval and prompt budgets', () => {
     expect(result.prompt).toContain('[S1] evil.ts');
     expect(result.prompt).toContain('You cannot edit files, run code, or post comments.');
   });
+  it('applies the selected task to a typed question within the same token budget', () => {
+    const result = fitContext('session expiry', sources, (text) => text.length, 2200, '', 'tests');
+    expect(result.prompt).toContain('Task: Compare the changed behavior');
+    expect(result.prompt).toContain('Question: session expiry');
+    expect(result.prompt.length).toBeLessThanOrEqual(2200);
+  });
   it('accepts only citations from the supplied evidence and deduplicates them', () => {
     expect(citedSources('See [S1] and [S1], also [S999].', sources)).toEqual({
       valid: [sources[0]],

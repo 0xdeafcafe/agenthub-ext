@@ -43,6 +43,12 @@ export function installAssistant(
     if (ready) frame?.contentWindow?.postMessage({channel, ...data}, targetOrigin);
   };
   const close = (): void => {
+    send({type: 'suspend'});
+    panel.hidden = true;
+    launch.setAttribute('aria-expanded', 'false');
+    launch.focus({preventScroll: true});
+  };
+  const dispose = (): void => {
     controller?.abort();
     frame?.remove();
     frame = null;
@@ -97,7 +103,11 @@ export function installAssistant(
   };
   launch.addEventListener('click', () => {
     if (frame) {
-      close();
+      if (panel.hidden) {
+        panel.hidden = false;
+        launch.setAttribute('aria-expanded', 'true');
+        send({type: 'resume'});
+      } else close();
       return;
     }
     channel = crypto.randomUUID();
@@ -170,7 +180,7 @@ export function installAssistant(
   signal.addEventListener(
     'abort',
     () => {
-      close();
+      dispose();
       launch.remove();
       panel.remove();
       observer.disconnect();

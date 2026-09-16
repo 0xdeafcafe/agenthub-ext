@@ -2,10 +2,21 @@ import type {MLCEngine, AppConfig} from '@mlc-ai/web-llm';
 import type {Engine, Conversation} from '@litert-lm/core';
 import type {Tokenizer} from '@mlc-ai/web-tokenizers';
 import {modelById, modelUrl, type ModelId} from './models';
-import {cachedTokenizer, gemmaFile, gemmaInstalled, removeGemma, removeTokenizer} from './storage';
+import {
+  cachedTokenizer,
+  gemmaFile,
+  gemmaInstalled,
+  modelHasData,
+  tokenizerInstalled,
+  qwenMetadataInstalled,
+  removeGemma,
+  removeQwen,
+  removeTokenizer,
+} from './storage';
+import {modelLease} from './lease';
 import {loadPackagedLiteRt} from './litert';
 import {fitContext} from './search';
-import {answerStream} from './answer-stream';
+import {consumeAnswer} from './answer-stream';
 import type {WorkerRequest, WorkerResponse} from './protocol';
 
 let qwen: MLCEngine | null = null;
@@ -15,6 +26,7 @@ let tokenizer: Tokenizer | null = null;
 let active: ModelId | null = null;
 let busy = false;
 let stopped = false;
+const lease = modelLease();
 const send = (message: WorkerResponse): void => self.postMessage(message);
 const assets = new URL('../../ai/', self.location.href);
 // Worker chunks live under assets/ in production, and at /ai-worker.js in preview.
@@ -47,14 +59,22 @@ async function unload(): Promise<void> {
   tokenizer?.dispose();
   tokenizer = null;
   active = null;
+  lease.release();
 }
 async function status(id: number): Promise<void> {
   const {hasModelInCache} = await import('@mlc-ai/web-llm');
   const installed: ModelId[] = [];
-  if (await hasModelInCache(modelById('qwen').runtimeId, await qwenConfig()).catch(() => false))
+  if (
+    (await hasModelInCache(modelById('qwen').runtimeId, await qwenConfig()).catch(() => false)) &&
+    (await qwenMetadataInstalled()) &&
+    (await tokenizerInstalled('qwen'))
+  )
     installed.push('qwen');
-  if (await gemmaInstalled()) installed.push('gemma');
-  send({id, type: 'status', installed});
+  if ((await gemmaInstalled()) && (await tokenizerInstalled('gemma'))) installed.push('gemma');
+  const partial: ModelId[] = [];
+  for (const model of ['qwen', 'gemma'] as const)
+    if (!installed.includes(model) && (await modelHasData(model))) partial.push(model);
+  send({id, type: 'status', installed, partial});
 }
 async function handle(message: WorkerRequest): Promise<void> {
   const {id} = message;
@@ -74,6 +94,7 @@ async function handle(message: WorkerRequest): Promise<void> {
     if (message.type === 'load') {
       const start = performance.now();
       await unload();
+      await lease.acquire();
       const adapter = await (
         navigator as Navigator & {gpu?: {requestAdapter(): Promise<{features: Set<string>} | null>}}
       ).gpu?.requestAdapter();
@@ -92,7 +113,17 @@ async function handle(message: WorkerRequest): Promise<void> {
           modelById('qwen').runtimeId,
           {
             appConfig: await qwenConfig(),
-            initProgressCallback: (report) => progress(report.progress, report.text),
+            initProgressCallback: (report) => {
+              const fetched = /([\d.]+)MB fetched/.exec(report.text);
+              progress(
+                report.progress,
+                fetched
+                  ? `Downloading Qwen · ${fetched[1]} MB · ${Math.round(report.progress * 100)}%`
+                  : report.text.includes('from cache')
+                    ? `Loading Qwen from cache · ${Math.round(report.progress * 100)}%`
+                    : 'Preparing Qwen…',
+              );
+            },
           },
           {context_window_size: 4096, temperature: 0.2},
         );
@@ -116,13 +147,16 @@ async function handle(message: WorkerRequest): Promise<void> {
       send({id, type: 'ready', model: active, loadMs: performance.now() - start});
     } else if (message.type === 'remove') {
       if (active === message.model) await unload();
-      if (message.model === 'qwen') {
-        const {deleteModelAllInfoInCache} = await import('@mlc-ai/web-llm');
-        await deleteModelAllInfoInCache(modelById('qwen').runtimeId, await qwenConfig());
-      } else await removeGemma();
-      await removeTokenizer(message.model);
-      await status(id);
-      send({id, type: 'removed'});
+      await lease.acquire();
+      try {
+        if (message.model === 'qwen') await removeQwen(new URL('qwen-2b.wasm', assets).href);
+        else await removeGemma();
+        await removeTokenizer(message.model);
+        await status(id);
+        send({id, type: 'removed'});
+      } finally {
+        if (!active) lease.release();
+      }
     } else if (message.type === 'unload') {
       await unload();
       send({id, type: 'unloaded'});
@@ -136,6 +170,7 @@ async function handle(message: WorkerRequest): Promise<void> {
         count,
         2700,
         message.previousQuestion,
+        message.mode,
       );
       if (!context.sources.length)
         throw new Error(
@@ -151,6 +186,7 @@ async function handle(message: WorkerRequest): Promise<void> {
       const start = performance.now();
       let firstTokenMs = 0;
       let output = '';
+      let truncated = false;
       const token = (text: string): void => {
         if (!text || stopped) return;
         if (!firstTokenMs) firstTokenMs = performance.now() - start;
@@ -158,7 +194,6 @@ async function handle(message: WorkerRequest): Promise<void> {
         send({id, type: 'token', text});
       };
       if (qwen) {
-        const answer = answerStream(token);
         await qwen.resetChat();
         const stream = await qwen.chat.completions.create({
           messages: [{role: 'user', content: context.prompt}],
@@ -167,25 +202,31 @@ async function handle(message: WorkerRequest): Promise<void> {
           temperature: 0.2,
           extra_body: {enable_thinking: false},
         });
-        for await (const chunk of stream) {
-          if (stopped) break;
-          answer.push(chunk.choices[0]?.delta.content ?? '');
-        }
-        answer.finish();
+        truncated = await consumeAnswer(
+          stream,
+          token,
+          () => stopped,
+          () => qwen!.interruptGenerate(),
+        );
       } else if (gemma) {
         conversation = await gemma.createConversation({
           preface: {extra_context: {enable_thinking: false}},
           sessionConfig: {maxOutputTokens: 700},
         });
-        for await (const chunk of conversation.sendMessageStreaming(context.prompt)) {
-          if (stopped) break;
-          if (typeof chunk.content === 'string') token(chunk.content);
-          else
-            for (const content of chunk.content ?? [])
-              if (content.type === 'text') token(content.text);
+        try {
+          for await (const chunk of conversation.sendMessageStreaming(context.prompt)) {
+            if (stopped) break;
+            if (typeof chunk.content === 'string') token(chunk.content);
+            else
+              for (const content of chunk.content ?? [])
+                if (content.type === 'text') token(content.text);
+          }
+        } catch (error) {
+          if (!stopped) throw error;
+        } finally {
+          await conversation.delete();
+          conversation = null;
         }
-        await conversation.delete();
-        conversation = null;
       }
       send({
         id,
@@ -193,6 +234,8 @@ async function handle(message: WorkerRequest): Promise<void> {
         elapsedMs: performance.now() - start,
         firstTokenMs,
         outputTokens: count(output),
+        stopped,
+        truncated,
       });
     }
   } finally {

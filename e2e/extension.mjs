@@ -11,7 +11,7 @@ import {browserPath} from './browser.mjs';
 import {startGithubFixture} from './github-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const extension = resolve(root, '.output/chrome-mv3');
+const extension = resolve(root, process.env.PRIX_EXTENSION_DIR ?? '.output/chrome-mv3');
 const preview = await startPreview({port: 0, watch: false});
 const profile = await mkdtemp(join(tmpdir(), 'prix-local-extension-'));
 const errors = [];

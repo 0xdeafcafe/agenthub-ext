@@ -27,3 +27,26 @@ export function answerStream(emit: (text: string) => void): {
     },
   };
 }
+
+/** WebLLM releases its generation lock only after its iterator is fully drained. */
+export async function consumeAnswer(
+  chunks: AsyncIterable<{
+    choices: {delta?: {content?: string | null}; finish_reason?: string | null}[];
+  }>,
+  emit: (text: string) => void,
+  stopped: () => boolean,
+  interrupt: () => Promise<void>,
+): Promise<boolean> {
+  const answer = answerStream(emit);
+  let truncated = false;
+  for await (const chunk of chunks) {
+    if (stopped()) {
+      await interrupt();
+      continue;
+    }
+    if (chunk.choices[0]?.finish_reason === 'length') truncated = true;
+    answer.push(chunk.choices[0]?.delta?.content ?? '');
+  }
+  answer.finish();
+  return truncated;
+}

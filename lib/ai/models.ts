@@ -1,9 +1,8 @@
-export const MODEL_ORIGINS = ['https://huggingface.co/*', 'https://*.hf.co/*'];
 export const MODELS = [
   {
     id: 'qwen',
     name: 'Qwen3.5 2B',
-    detail: 'Smaller download · good starting point',
+    detail: 'Smaller download',
     bytes: 1_080_000_000,
     repo: 'mlc-ai/Qwen3.5-2B-q4f16_1-MLC',
     revision: 'dd74e9c8a20c4546df85c844103bff87b6dcacad',
