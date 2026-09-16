@@ -20,6 +20,8 @@ That’s it. For updates, replace the files in that folder, hit **Reload** on th
 
 The download tracks the last `main` commit that passed the checks. Every merge builds fresh ZIPs. Named versions live on the [releases page](https://github.com/0xdeafcafe/agenthub-ext/releases); main builds don’t take over the latest stable version.
 
+**To install the AI features from this branch:** run `npm ci`, then `npm run unpacked`. Choose `dist/pr-impact-unpacked` in **Load unpacked**. Keep that folder in place; rebuilding it and clicking **Reload** updates the extension. Disable any copy loaded from another folder so only one PR Impact runs on GitHub.
+
 Other browsers:
 
 - **Firefox:** [download](https://github.com/0xdeafcafe/agenthub-ext/releases/download/rolling/pr-impact-firefox-mv2.zip), unzip, open `about:debugging` → **This Firefox** → **Load Temporary Add-on**, and select `manifest.json`. It’s unsigned, so you’ll need to load it again after restarting Firefox.
@@ -167,7 +169,14 @@ Built with WXT, TypeScript, dom-chef, picomatch, and YAML. Playwright handles th
 
 Open **Ask this PR** on Changes. Search works immediately, with file and line links. Pick a file or folder to keep the question focused.
 
-For answers, install **Qwen3.5 2B** (~1.1 GB), **Gemma 4 E2B** (~2.0 GB), or both. Downloads stay cached. Switching models replaces the active worker; closing the panel frees it. **Compare** asks the other model using the same excerpts. **Sources used** shows what went into the answer.
+For answers, expand **Models** and install **Qwen3.5 2B** (~1.1 GB), **Gemma 4 E2B** (~2.0 GB), or both. Downloads start when you click Install and stay cached for offline use. No extra model-host permission prompt is needed. If you entered a question first, it runs when the model is ready.
+
+- **Stop** keeps the model ready for the next question. **Unload from memory** frees it while keeping the download.
+- **Copy answer** includes source references. **Retry** and **Compare** reuse the original question and excerpts. Click a citation to jump to its file.
+- Closing and reopening the panel keeps the conversation for that PR and frees model memory. Reloading or navigating to another page clears the conversation; it is not saved to disk.
+- Incomplete downloads have **Retry** and **Remove** controls. Only one PR tab can load a model at a time; close its panel or unload the model before using another tab.
+
+**Sources used** shows the excerpts supplied to the model. Answers support headings, lists, and code blocks; generated HTML and external links remain plain text.
 
 Try “What behavior changed?”, “Find edge cases”, or “Check test gaps”. On a huge PR, start with one folder. A small model sees selected excerpts, not the whole repo. Generated files are excluded unless you include them.
 
@@ -177,10 +186,11 @@ This is experimental. Both models generate answers locally, but the seeded revie
 npm run test:assistant         # simulated models, UI checks and screenshots
 npm run test:ai:real           # opt-in GPU smoke test; downloads ~3.1 GB
 npm run build
+npm run test:ai:install        # real Install/Use buttons, stop/retry and offline reuse
 npm run test:ai:real -- --extension qwen gemma  # actual packaged workers and CSP
 npm run test:ai:real -- --extension --offline qwen gemma  # reuse the cached models
 PRIX_REAL_AI=1 npm run dev:preview  # use real models in the local playground
 node scripts/ai/retrieval.mjs /path/to/saved.diff  # inspect retrieval without a model
 ```
 
-The normal playground clearly labels simulated answers. The real test keeps separate preview and extension profiles under `.output/`, so each downloads its own models once. Reports retain the supplied evidence, expected behavior, answers, citations, and timings for three seeded cases. These are runtime checks, not an automatic correctness grade. Runtime JS/WASM is packaged with the extension; model weights download separately. The [model investigation](docs/browser-ai.md) records the pinned versions and remaining checks.
+The normal playground clearly labels simulated answers. The real tests keep separate preview, worker-benchmark, and installation profiles under `.output/`, so each downloads its own models once. Reports retain the supplied evidence, expected behavior, answers, citations, and timings for three seeded cases. These are runtime checks, not an automatic correctness grade. Runtime JS/WASM is packaged with the extension; model weights download separately. The [model investigation](docs/browser-ai.md) records the pinned versions and remaining checks.

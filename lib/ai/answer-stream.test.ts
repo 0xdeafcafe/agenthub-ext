@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {answerStream} from './answer-stream';
+import {answerStream, consumeAnswer} from './answer-stream';
 
 function collect(parts: string[]): string {
   let result = '';
@@ -25,5 +25,31 @@ describe('answer streaming', () => {
   it('preserves partial prefixes instead of silently losing model output', () => {
     expect(collect(['<thi'])).toBe('<thi');
     expect(collect(['<think>nonempty</think>'])).toBe('<think>nonempty</think>');
+  });
+  it('drains an interrupted engine iterator so its next request can acquire the lock', async () => {
+    let released = false;
+    let stopped = false;
+    let interrupts = 0;
+    const output: string[] = [];
+    async function* engine() {
+      yield {choices: [{delta: {content: 'First'}}]};
+      yield {choices: [{delta: {content: 'late token'}}]};
+      // WebLLM currently releases here, not in a finally block.
+      released = true;
+    }
+    await consumeAnswer(
+      engine(),
+      (text) => {
+        output.push(text);
+        stopped = true;
+      },
+      () => stopped,
+      async () => {
+        interrupts++;
+      },
+    );
+    expect(released).toBe(true);
+    expect(interrupts).toBe(1);
+    expect(output).toEqual(['First']);
   });
 });

@@ -210,9 +210,11 @@ export function fitContext(
   countTokens: (text: string) => number,
   budget = 2700,
   history = '',
+  mode: TaskMode = 'ask',
 ): PromptContext {
   const ending = '\nAnswer using only the excerpts above, with [S…] citations.';
-  const prefix = `${SYSTEM_PROMPT}\n\n${history ? `Earlier question (context only): ${history.slice(-1200)}\n\n` : ''}Question: ${question}\n\nDiff excerpts:\n`;
+  const task = QUICK_QUESTIONS.find((quick) => quick.mode === mode)?.prompt;
+  const prefix = `${SYSTEM_PROMPT}\n\n${task && task !== question ? `Task: ${task}\n\n` : ''}${history ? `Earlier question (context only): ${history.slice(-1200)}\n\n` : ''}Question: ${question}\n\nDiff excerpts:\n`;
   const selected: SourceChunk[] = [];
   let prompt = prefix;
   for (const chunk of sources) {

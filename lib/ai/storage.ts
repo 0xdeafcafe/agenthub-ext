@@ -2,6 +2,43 @@ import {modelById, modelUrl, tokenizerUrl, type ModelId} from './models';
 const CACHE = 'prix-ai-tokenizers-v1';
 const GEMMA_BYTES = 2_008_432_640;
 const GEMMA_FILE = 'prix-gemma-4-e2b-b3ca0d2f.litertlm';
+const QWEN_CACHES = ['webllm/model', 'webllm/config', 'webllm/wasm'];
+export async function tokenizerInstalled(model: ModelId): Promise<boolean> {
+  return Boolean(await (await caches.open(CACHE)).match(tokenizerUrl(model)));
+}
+export async function qwenMetadataInstalled(): Promise<boolean> {
+  return Boolean(
+    (await (await caches.open('webllm/config')).match(modelUrl('qwen') + 'mlc-chat-config.json')) &&
+    (await (await caches.open('webllm/model')).match(modelUrl('qwen') + 'tokenizer.json')),
+  );
+}
+
+/** Includes interrupted downloads, so they can be retried or removed offline. */
+export async function modelHasData(model: ModelId): Promise<boolean> {
+  if (await tokenizerInstalled(model)) return true;
+  if (model === 'gemma') {
+    try {
+      await (await navigator.storage.getDirectory()).getFileHandle(GEMMA_FILE);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  for (const name of QWEN_CACHES) {
+    const keys = await (await caches.open(name)).keys();
+    if (keys.some((key) => key.url.startsWith(modelUrl(model)))) return true;
+  }
+  return false;
+}
+
+/** WebLLM's removal helper fetches its shard manifest when absent. Never fetch on removal. */
+export async function removeQwen(wasmUrl: string): Promise<void> {
+  for (const name of QWEN_CACHES) {
+    const cache = await caches.open(name);
+    for (const key of await cache.keys())
+      if (key.url.startsWith(modelUrl('qwen')) || key.url === wasmUrl) await cache.delete(key);
+  }
+}
 export async function cachedTokenizer(model: ModelId): Promise<ArrayBuffer> {
   const cache = await caches.open(CACHE);
   const url = tokenizerUrl(model);
@@ -71,7 +108,8 @@ export async function gemmaFile(progress: (fraction: number, text: string) => vo
     await writer.close();
     return handle.getFile();
   } catch (error) {
-    await writer.abort();
+    await reader.cancel().catch(() => {});
+    await writer.abort().catch(() => {});
     throw error;
   } finally {
     reader.releaseLock();
@@ -79,5 +117,9 @@ export async function gemmaFile(progress: (fraction: number, text: string) => vo
 }
 export async function removeGemma(): Promise<void> {
   const root = await navigator.storage.getDirectory();
-  await root.removeEntry(GEMMA_FILE).catch(() => {});
+  try {
+    await root.removeEntry(GEMMA_FILE);
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'NotFoundError')) throw error;
+  }
 }

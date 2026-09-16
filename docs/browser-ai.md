@@ -23,6 +23,11 @@ Useful UI additions in this draft:
 - Visible input tokens, first-token time, elapsed time, inspected files, and omissions.
 - Stop, clear, refresh source context, unload memory, and remove downloads.
 - Resizable extension iframe outside GitHub's virtualized layout.
+- A queued question runs after loading a model. Task selection also applies to typed questions.
+- Copy and retry answers; comparisons preserve the original question, prior-question context, and excerpts.
+- Readable headings, lists, code blocks, and clickable validated citations. HTML and external links stay inert.
+- Stop generation while keeping the model loaded. Closing the panel releases the runtime and keeps the conversation until page navigation or reload.
+- Retry or remove incomplete downloads offline. A browser lock prevents separate tabs from loading competing model runtimes or removing an in-use download.
 
 ## Models and current judgment
 
@@ -43,13 +48,13 @@ The index retains up to 2 million characters, 48,000 per file, in 65-line chunks
 
 Retrieval uses paths, split identifiers, text matches, bounded synonym expansion, and file diversity. Behavior questions give matching implementation a modest score preference; explicit test and documentation questions change that preference. Test-gap prompts pair changed application files with tests sharing their basename. This is lexical retrieval; embeddings and model-driven tool loops are deferred until they demonstrate better retrieval on fixed questions.
 
-The runtime's actual tokenizer fits evidence into a 2,700-token prompt inside a 4,096-token context, reserving room for an answer of up to 700 tokens and model template overhead. Only the prior question is retained for follow-up context. The UI shows every supplied excerpt and labels the file sample. Citations are checked against those source IDs; invented references do not become links. Model output is rendered as text.
+The runtime's actual tokenizer fits evidence into a 2,700-token prompt inside a 4,096-token context, reserving room for an answer of up to 700 tokens and model template overhead. Only the prior question is retained for follow-up context. The UI shows every supplied excerpt and labels the file sample. Citations are checked against those source IDs; invented references do not become links. A small DOM renderer formats Markdown using text nodes without interpreting model-provided HTML or URLs.
 
 PR content is untrusted evidence. The assistant has no code execution, edit, posting, or arbitrary network tools. Prompting alone cannot guarantee correct or injection-proof answers, so this remains a review aid with inspectable evidence.
 
 ## Validation and remaining work
 
-`npm run test:assistant` uses an explicitly labelled simulated worker for repeatable UI testing. It covers an empty referrer, two installs, comparison, cancellation, persistence, source links, navigation, and screenshots in both themes and mobile sizing. Simulated installs do not require gigabytes of free storage. `npm run test:extension` also passes with the real packaged iframe, background index, and local search. Normal CI never downloads model weights.
+`npm run test:assistant` uses an explicitly labelled simulated worker for repeatable UI testing. It covers an empty referrer, queued questions, two installs, copying, retry, comparison, stop without unloading, incomplete-download removal, conversation retention, competition between tabs, source links, navigation, and screenshots in both themes and mobile sizing. Simulated installs do not require gigabytes of free storage. `npm run test:extension` checks the real packaged iframe, background index, and local search. Normal CI never downloads model weights.
 
 `npm run test:ai:real` is opt-in and uses an isolated persistent Chromium profile. After building, add `-- --extension qwen gemma` to exercise the packaged workers under the extension's unchanged CSP. Add `--offline` after an online run to disable network access and reuse the downloaded models. Preview and extension caches are separate. Each model has its own report under `.output/ai-benchmark/`, including evidence, expected behavior, answers, citations, and timing. `node scripts/ai/retrieval.mjs /path/to/PR.diff` records source selection for the SSO questions above.
 
@@ -61,13 +66,16 @@ Neither model passed the review comparison cleanly. Qwen described the expiry ch
 
 The packaged runtimes include the tokenizer UMD-to-ESM wrapper and a LiteRT logger compatibility fix: its classic-script fallback depends on block-function hoisting, which strict module workers do not provide. Both LiteRT variants have a regression check using the installed runtime's logger. Qwen's empty thinking preamble is removed across streamed token boundaries. Source citations with old/new line labels are checked against supplied IDs before linking.
 
-The runtime harness invokes workers directly. It records granted permissions, but does not approve Chromium's native optional-host permission prompt. The real installation prompt still needs a manual Arc/Chrome check.
+Public model artifacts support CORS, so model-host permissions and their native prompt have been removed. The manifest grants access only to GitHub and its patch host. `npm run test:ai:install` exercises the actual Install/Use buttons in the production iframe against real downloads, followed by answer generation, stop/retry, closing/reopening, and offline cache loads. It uses its own persistent `.output/ai-install-profile` and records `.output/ai-benchmark/real-install.json`.
+
+Real stop/retry testing caught a WebLLM lock leak: breaking its async iterator after interruption bypasses the runtime's lock release. The worker now interrupts and drains that iterator before accepting another question. A five-second UI fallback unloads an unresponsive worker. Qwen cache removal enumerates known artifacts instead of calling WebLLM's removal helper, which can fetch a missing shard manifest even during removal.
+
+`npm run unpacked` creates `dist/pr-impact-unpacked` with all runtime JS/WASM and an `INSTALL.txt`. Load that directory in Chrome or Arc's extensions page. `PRIX_EXTENSION_DIR=dist/pr-impact-unpacked node e2e/extension.mjs` verifies the delivered folder itself.
 
 Still required before calling this ready:
 
-- Check the native model-download permission prompt in Arc/Chrome and complete end-to-end installation through it.
 - Expand the small seeded comparison to fixed SSO questions with reviewed expected answers. Neither model earns a “best for review” recommendation from these samples.
-- Verify interrupted/partial download removal, storage pressure, GPU loss, and multi-tab GPU contention. Each panel currently owns its own worker.
+- Broaden device testing for storage pressure and actual GPU loss. Partial cleanup and cross-tab exclusion have automated coverage; real GPU-loss recovery is not yet forced in the harness.
 - Exercise private PRs and live virtualization in Arc. Firefox and Safari inference are unverified.
 - Measure retrieval against a labelled set: improved ranking alone does not prove the selected excerpts answer the question.
 
