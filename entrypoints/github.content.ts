@@ -168,7 +168,8 @@ const outerWrappers = new WeakMap<Element, Element>();
 function applyState(container: Element, state: DisplayState, virtualFiles: VirtualFiles): void {
   if (!isFileContainer(container)) return;
   const virtual = isVirtualFile(container);
-  const canCollapse = container.querySelector(':scope > .prix-header') !== null;
+  const canCollapse =
+    container.querySelector(':scope > .prix-header, :scope > .prix-header-wrapper') !== null;
   const collapsed = !virtual && state === 'collapsed' && canCollapse;
   container.classList.toggle('prix-collapsed', collapsed);
   container.classList.toggle('prix-hidden', !virtual && state === 'hidden');
@@ -186,18 +187,17 @@ function applyState(container: Element, state: DisplayState, virtualFiles: Virtu
 }
 
 /**
- * Tags the direct child of the container that holds the header, so
- * `.prix-collapsed > :not(.prix-header)` can hide everything else without
- * knowing each view's nesting depth.
+ * Keep only the header and its ancestor chain when collapsing. A wrapper
+ * can contain both the header and diff body, so preserving that whole
+ * subtree would leave the diff visible while its category says Collapsed.
  */
-function markHeaderChild(container: Element, header: Element): void {
-  let node = header;
-  while (node.parentElement && node.parentElement !== container) {
-    node = node.parentElement;
+function markHeaderPath(container: Element, header: Element): void {
+  for (const node of container.querySelectorAll('.prix-header, .prix-header-wrapper')) {
+    node.classList.remove('prix-header', 'prix-header-wrapper');
   }
-
-  if (node.parentElement === container) {
-    node.classList.add('prix-header');
+  header.classList.add('prix-header');
+  for (let node = header.parentElement; node && node !== container; node = node.parentElement) {
+    node.classList.add('prix-header-wrapper');
   }
 }
 
@@ -983,7 +983,7 @@ async function init(signal: AbortSignal): Promise<void> {
 
     const header = adapter.getHeader(container);
     if (header) {
-      markHeaderChild(container, header);
+      markHeaderPath(container, header);
     }
 
     const previous = processed.get(container);
@@ -1100,7 +1100,7 @@ function run(): void {
     controller?.abort();
     controller = null;
     for (const element of document.querySelectorAll(
-      '.prix-collapsed, .prix-hidden, .prix-hidden-outer, .prix-collapsed-outer, .prix-header, .prix-flash, .prix-tree-collapsed, .prix-tree-hidden, .prix-virtual-muted',
+      '.prix-collapsed, .prix-hidden, .prix-hidden-outer, .prix-collapsed-outer, .prix-header, .prix-header-wrapper, .prix-flash, .prix-tree-collapsed, .prix-tree-hidden, .prix-virtual-muted',
     )) {
       element.classList.remove(
         'prix-collapsed',
@@ -1108,6 +1108,7 @@ function run(): void {
         'prix-hidden-outer',
         'prix-collapsed-outer',
         'prix-header',
+        'prix-header-wrapper',
         'prix-flash',
         'prix-tree-collapsed',
         'prix-tree-hidden',
