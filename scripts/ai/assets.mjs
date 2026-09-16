@@ -8,6 +8,15 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const QWEN_SHA = 'b0f951d411e4fd59fe2af76be9328905ae30549e570a192a841c958b293ecd53';
 const QWEN_URL =
   'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_84/base/Qwen3.5-2B-q4f16_1_cs1k-webgpu.wasm';
+export function liteRtModule(source) {
+  // The classic-script logger relies on sloppy-mode block-function hoisting.
+  // Supply the same fallback at module scope for strict ES module workers.
+  return (
+    'const custom_dbg = (...args) => console.warn(...args);\n' +
+    source +
+    '\nexport default ModuleFactory;\n'
+  );
+}
 export async function prepareAiAssets() {
   const destination = resolve(root, 'public/ai');
   await mkdir(resolve(destination, 'litert'), {recursive: true});
@@ -45,7 +54,7 @@ export async function prepareAiAssets() {
     if (name.endsWith('.js'))
       await writeFile(
         resolve(destination, 'litert', name),
-        (await readFile(resolve(source, name), 'utf8')) + '\nexport default ModuleFactory;\n',
+        liteRtModule(await readFile(resolve(source, name), 'utf8')),
       );
     else if (name.endsWith('.wasm'))
       await copyFile(resolve(source, name), resolve(destination, 'litert', name));

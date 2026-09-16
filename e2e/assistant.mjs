@@ -17,9 +17,19 @@ const shot = async (name) =>
 try {
   await mkdir('e2e/screenshots/local', {recursive: true});
   await page.goto(preview.url + '/acme/review-kit/pull/42/changes?theme=dark');
+  await page
+    .locator('#prix-ai-launch')
+    .screenshot({path: 'e2e/screenshots/local/assistant-launcher-dark.png'});
+  await page.evaluate(() => {
+    const policy = document.createElement('meta');
+    policy.name = 'referrer';
+    policy.content = 'no-referrer';
+    document.head.append(policy);
+  });
   await page.locator('#prix-ai-launch').click();
   const ai = page.frameLocator('#prix-ai-panel iframe');
   await ai.locator('#coverage').filter({hasText: '8 files'}).waitFor();
+  assert.equal(await ai.locator('body').evaluate(() => document.referrer), '');
   assert.match(await ai.locator('#models-summary').textContent(), /simulation/);
   assert.equal(await ai.locator('#model-cards button').filter({hasText: 'Install'}).count(), 2);
   await shot('welcome-dark');
@@ -32,6 +42,10 @@ try {
   await firstSource.click();
   await page.waitForFunction(() => location.hash.startsWith('#diff-'));
   await ai.locator('#clear').click();
+  // The simulated worker stores no weights, even on a CI runner with little free disk.
+  await ai.locator('body').evaluate(() => {
+    navigator.storage.estimate = async () => ({quota: 1024, usage: 0});
+  });
   await ai.locator('#models summary').click();
   await ai.locator('#install-both').click();
   await ai.locator('#load-progress:not([hidden])').waitFor();
@@ -53,7 +67,7 @@ try {
   assert.match(await ai.locator('#task-status').textContent(), /Stopped/);
   assert.equal(await ai.locator('#active-model').textContent(), 'No model loaded');
   await ai.locator('#close').click();
-  assert.equal(await page.locator('#prix-ai-panel iframe').count(), 0);
+  await page.locator('#prix-ai-panel iframe').waitFor({state: 'detached'});
   await page.locator('#prix-ai-launch').click();
   await ai.locator('#coverage').filter({hasText: '8 files'}).waitFor();
   await ai.locator('#models summary').click();
