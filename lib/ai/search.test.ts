@@ -143,6 +143,29 @@ describe('retrieval and prompt budgets', () => {
     const many = indexOf(Array.from({length: 10}, (_, n) => chunk(`S${n}`, 'a.ts', 'session')));
     expect(searchChanges(many, 'session')).toHaveLength(3);
   });
+  it('samples distinct files before additional hunks from one file', () => {
+    const evidence = indexOf([
+      chunk('S1', 'src/session.ts', 'session expiry'),
+      chunk('S2', 'src/session.ts', 'session expiry'),
+      chunk('S3', 'src/session.ts', 'session expiry'),
+      chunk('S4', 'src/token.ts', 'session expiry'),
+      chunk('S5', 'tests/session.test.ts', 'session expiry', 'tests'),
+    ]);
+    expect(
+      selectContext(evidence, 'session expiry', 'ask', {})
+        .slice(0, 3)
+        .map((source) => source.path),
+    ).toEqual(['src/session.ts', 'tests/session.test.ts', 'src/token.ts']);
+  });
+  it('keeps explicitly requested tests or documentation ahead of implementation', () => {
+    const evidence = indexOf([
+      chunk('S1', 'src/session.ts', 'session tests documentation'),
+      chunk('S2', 'tests/session.test.ts', 'session tests documentation', 'tests'),
+      chunk('S3', 'docs/session.md', 'session tests documentation', 'docs'),
+    ]);
+    expect(selectContext(evidence, 'session tests', 'ask', {})[0].id).toBe('S2');
+    expect(selectContext(evidence, 'session documentation', 'ask', {})[0].id).toBe('S3');
+  });
   it('uses the supplied tokenizer for the entire prompt, including instructions', () => {
     const count = (text: string): number => text.length;
     const result = fitContext('Question', sources, count, 1400);
@@ -172,6 +195,14 @@ describe('retrieval and prompt budgets', () => {
   });
   it('accepts only citations from the supplied evidence and deduplicates them', () => {
     expect(citedSources('See [S1] and [S1], also [S999].', sources)).toEqual({
+      valid: [sources[0]],
+      invalid: ['S999'],
+    });
+  });
+  it('checks citations with line labels against the supplied source IDs', () => {
+    expect(
+      citedSources('Before [S1, L2] or [S1, old], after [S1:R2-R4], unknown [S999, new].', sources),
+    ).toEqual({
       valid: [sources[0]],
       invalid: ['S999'],
     });

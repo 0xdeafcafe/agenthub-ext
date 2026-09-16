@@ -26,7 +26,13 @@ const node = <K extends keyof HTMLElementTagNameMap>(
   return element;
 };
 const channel = location.hash.slice(1);
-const parentOrigin = document.referrer ? new URL(document.referrer).origin : '';
+const requestedOrigin = new URLSearchParams(location.search).get('parentOrigin');
+// Only accept the GitHub host or the same-origin development playground.
+// Messages must also match the parent window and this panel's channel below.
+const parentOrigin =
+  requestedOrigin === 'https://github.com' || requestedOrigin === location.origin
+    ? requestedOrigin
+    : '';
 const post = (data: Record<string, unknown>): void => {
   if (parentOrigin) parent.postMessage({channel, ...data}, parentOrigin);
 };
@@ -278,6 +284,7 @@ async function loadModel(model: ModelId): Promise<void> {
     const estimate = await navigator.storage.estimate();
     if (request !== job) return;
     if (
+      !simulated &&
       !installed.has(model) &&
       estimate.quota &&
       estimate.quota - (estimate.usage ?? 0) < modelById(model).bytes * 1.1

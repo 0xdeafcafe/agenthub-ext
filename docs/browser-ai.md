@@ -1,6 +1,6 @@
 # Local PR assistant: implementation checkpoint
 
-Draft, 2026-09-16. Stacked on PR #1. The UI, bounded diff index, local retrieval, two-model install flow, and worker integrations are implemented. This is not yet a validated model-quality recommendation.
+Draft, 2026-09-16. Stacked on PR #1. Both real models now generate answers. The production assistant opens and indexes the PR correctly, including when Chromium omits the iframe referrer. The small review comparison exposed answer errors, so this is not a validated model-quality recommendation.
 
 ## What is useful
 
@@ -11,7 +11,7 @@ The linked [LangWatch SSO PR](https://github.com/langwatch/langwatch/pull/7633/c
 - Which checks stop SCIM requests from modifying another organization?
 - Which tests cover expiry boundaries, domain reproof, and failure paths?
 
-The local retrieval probe found relevant identity-provider, domain-verification, SCIM-route, and test hunks for these questions. That measures retrieval, not answer correctness. Inspect `.output/ai-benchmark/retrieval.json` after running the probe; don't assume every top-ranked excerpt is sufficient evidence.
+The local retrieval probe found relevant identity-provider, domain-verification, SCIM-route, and test hunks for these questions. On the newer 468-file snapshot, SCIM questions now start with `platform/app/ee/scim/routes.ts`, and domain questions start with `sso-domain-reproof.service.ts`. The previous ranking started with tests. Explicit test questions still prefer tests, with distinct files selected before repeated hunks. That measures retrieval, not answer correctness. Inspect `.output/ai-benchmark/retrieval.json` after running the probe; don't assume every top-ranked excerpt is sufficient evidence.
 
 Useful UI additions in this draft:
 
@@ -26,10 +26,10 @@ Useful UI additions in this draft:
 
 ## Models and current judgment
 
-| Model            | Runtime          | Download                     | Judgment                                                                         |
-| ---------------- | ---------------- | ---------------------------- | -------------------------------------------------------------------------------- |
-| Qwen3.5 2B q4f16 | WebLLM 0.2.85    | ~1.08 GB including tokenizer | First model to try because it is smaller. Quality advantage unproven.            |
-| Gemma 4 E2B web  | LiteRT-LM 0.17.0 | ~2.04 GB including tokenizer | Optional comparison. Browser API is early preview; validation remains necessary. |
+| Model            | Runtime          | Download                     | Judgment                                                                                                     |
+| ---------------- | ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Qwen3.5 2B q4f16 | WebLLM 0.2.85    | ~1.08 GB including tokenizer | Smaller download. Real inference works; the review probe exposed unsupported claims and logic errors.        |
+| Gemma 4 E2B web  | LiteRT-LM 0.17.0 | ~2.04 GB including tokenizer | Real inference works. Better abstention in the missing-evidence probe, but weak regression-test suggestions. |
 
 These sizes come from the pinned artifacts, not peak memory measurements. WebLLM's registry estimates ~2.25 GB VRAM for this Qwen configuration. Actual Arc memory and throughput have not been measured. [WebLLM registry](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts), [Qwen files](https://huggingface.co/mlc-ai/Qwen3.5-2B-q4f16_1-MLC/tree/dd74e9c8a20c4546df85c844103bff87b6dcacad), [Gemma files](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1).
 
@@ -41,7 +41,7 @@ The assistant fetches the current comparison's diff only when opened. The backgr
 
 The index retains up to 2 million characters, 48,000 per file, in 65-line chunks. Long lines are shortened at 800 characters. It preserves old/new line numbers and reports omitted chunks. Generated files are deprioritized during indexing and excluded from retrieval by default. A SHA-256 of the diff invalidates conversation state when refreshed source changes.
 
-Retrieval uses paths, split identifiers, text matches, bounded synonym expansion, and file diversity. Test-gap prompts pair changed application files with tests sharing their basename. This is lexical retrieval; embeddings and model-driven tool loops are deferred until they demonstrate better retrieval on fixed questions.
+Retrieval uses paths, split identifiers, text matches, bounded synonym expansion, and file diversity. Behavior questions give matching implementation a modest score preference; explicit test and documentation questions change that preference. Test-gap prompts pair changed application files with tests sharing their basename. This is lexical retrieval; embeddings and model-driven tool loops are deferred until they demonstrate better retrieval on fixed questions.
 
 The runtime's actual tokenizer fits evidence into a 2,700-token prompt inside a 4,096-token context, reserving room for an answer of up to 700 tokens and model template overhead. Only the prior question is retained for follow-up context. The UI shows every supplied excerpt and labels the file sample. Citations are checked against those source IDs; invented references do not become links. Model output is rendered as text.
 
@@ -49,20 +49,26 @@ PR content is untrusted evidence. The assistant has no code execution, edit, pos
 
 ## Validation and remaining work
 
-`npm run test:assistant` uses an explicitly labelled simulated worker for repeatable UI testing. It covers two installs, comparison, cancellation, persistence, source links, navigation, and screenshots in both themes and mobile sizing. Normal CI never downloads model weights.
+`npm run test:assistant` uses an explicitly labelled simulated worker for repeatable UI testing. It covers an empty referrer, two installs, comparison, cancellation, persistence, source links, navigation, and screenshots in both themes and mobile sizing. Simulated installs do not require gigabytes of free storage. `npm run test:extension` also passes with the real packaged iframe, background index, and local search. Normal CI never downloads model weights.
 
-`npm run test:ai:real` is opt-in and uses an isolated persistent Chromium profile. It loads both actual models and asks about a seeded session-expiry boundary change, retaining JSON events and output in `.output/ai-benchmark/`. `node scripts/ai/retrieval.mjs /path/to/PR.diff` records source selection for the SSO questions above.
+`npm run test:ai:real` is opt-in and uses an isolated persistent Chromium profile. After building, add `-- --extension qwen gemma` to exercise the packaged workers under the extension's unchanged CSP. Add `--offline` after an online run to disable network access and reuse the downloaded models. Preview and extension caches are separate. Each model has its own report under `.output/ai-benchmark/`, including evidence, expected behavior, answers, citations, and timing. `node scripts/ai/retrieval.mjs /path/to/PR.diff` records source selection for the SSO questions above.
 
-Qwen subsequently loaded successfully in Chromium (21.8 seconds with cached weights), but generation exposed a ready-event timing race. The race is fixed in this checkpoint; successful generation has not yet been verified. Gemma downloads were stopped at the requested break.
+The three seeded cases cover an inclusive-to-exclusive expiry boundary, an OR-to-AND tenant guard regression, and a SAML question with only unrelated session code supplied. Reports check runtime completion and citation IDs; they do not grade factual correctness. Inspect the retained answers against each case's expected behavior.
 
-The first real run downloaded Qwen's weights and exposed a tokenizer package interoperability issue; the package ships UMD while declaring ESM. The draft now packages an explicit ESM wrapper. Initial integration also exposed WXT's worker URL transform and LiteRT's use of `importScripts`, which module workers reject. The draft uses an explicit worker entrypoint and packaged LiteRT module loader. These are reasons to keep the PR a draft until the repeat run and production-extension inference pass.
+The [retained 2026-09-16 run](ai-benchmark.json) includes the exact prompt, pinned models, source hashes, synthetic evidence, raw answers, and manual assessments. Both packaged workers loaded cached models and completed all three questions with networking disabled in Chromium 151.0.7922.34. Qwen loaded in 3.1 seconds; Gemma loaded in 4.3 seconds, then took another 30.9 seconds to produce its first answer token. Later Gemma questions started streaming in about 0.4 seconds. These are single-machine observations, not performance guarantees.
+
+Neither model passed the review comparison cleanly. Qwen described the expiry change correctly but omitted its citation, repeated the tenant finding until its answer was cut off, and invented replay protection from unrelated code. Gemma suggested a tenant test that passes both versions, and its otherwise appropriate SAML abstention described the deleted expiry expression without distinguishing it from the new one. Valid citation IDs do not establish that a claim follows from the evidence.
+
+The packaged runtimes include the tokenizer UMD-to-ESM wrapper and a LiteRT logger compatibility fix: its classic-script fallback depends on block-function hoisting, which strict module workers do not provide. Both LiteRT variants have a regression check using the installed runtime's logger. Qwen's empty thinking preamble is removed across streamed token boundaries. Source citations with old/new line labels are checked against supplied IDs before linking.
+
+The runtime harness invokes workers directly. It records granted permissions, but does not approve Chromium's native optional-host permission prompt. The real installation prompt still needs a manual Arc/Chrome check.
 
 Still required before calling this ready:
 
-- Finish real inference with both models in the production extension under its actual CSP and optional host permissions.
-- Compare answers against the fixed SSO questions and seeded bugs; record unsupported claims, misses, and citation quality before picking a “best” model.
-- Verify offline warm load, interrupted/partial download removal, storage pressure, GPU loss, and multi-tab GPU contention. Each panel currently owns its own worker.
+- Check the native model-download permission prompt in Arc/Chrome and complete end-to-end installation through it.
+- Expand the small seeded comparison to fixed SSO questions with reviewed expected answers. Neither model earns a “best for review” recommendation from these samples.
+- Verify interrupted/partial download removal, storage pressure, GPU loss, and multi-tab GPU contention. Each panel currently owns its own worker.
 - Exercise private PRs and live virtualization in Arc. Firefox and Safari inference are unverified.
-- Improve broad-query ranking: the SSO probe sometimes puts tests/docs ahead of the runtime checks needed to answer a question.
+- Measure retrieval against a labelled set: improved ranking alone does not prove the selected excerpts answer the question.
 
-The natural next checkpoint is reliable production inference plus a small evidence-based model comparison. No review is posted automatically, and nothing in this draft is a release.
+No review is posted automatically, and nothing in this draft is a release.

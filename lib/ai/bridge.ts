@@ -28,6 +28,7 @@ export function installAssistant(
   let loading = false;
   let channel = '';
   let targetOrigin = '';
+  let ready = false;
   let lastTheme = '';
   const theme = (): string => {
     const root = document.documentElement;
@@ -38,14 +39,16 @@ export function installAssistant(
       ? 'dark'
       : 'light';
   };
-  const send = (data: Record<string, unknown>): void =>
-    frame?.contentWindow?.postMessage({channel, ...data}, targetOrigin);
+  const send = (data: Record<string, unknown>): void => {
+    if (ready) frame?.contentWindow?.postMessage({channel, ...data}, targetOrigin);
+  };
   const close = (): void => {
     controller?.abort();
     frame?.remove();
     frame = null;
     index = null;
     loading = false;
+    ready = false;
     panel.hidden = true;
     launch.setAttribute('aria-expanded', 'false');
     launch.focus({preventScroll: true});
@@ -100,6 +103,8 @@ export function installAssistant(
     channel = crypto.randomUUID();
     controller = new AbortController();
     const url = new URL(browser.runtime.getURL('/assistant.html'));
+    // Extension iframes can have an empty document.referrer.
+    url.searchParams.set('parentOrigin', location.origin);
     url.hash = channel;
     targetOrigin = url.origin === 'null' ? `${url.protocol}//${url.host}` : url.origin;
     frame = document.createElement('iframe');
@@ -120,7 +125,10 @@ export function installAssistant(
         event.data?.channel !== channel
       )
         return;
-      if (event.data.type === 'ready' || event.data.type === 'refresh') void load();
+      if (event.data.type === 'ready') {
+        ready = true;
+        void load();
+      } else if (event.data.type === 'refresh') void load();
       else if (event.data.type === 'close') close();
       else if (event.data.type === 'open-source') {
         const source = index?.chunks.find((chunk) => chunk.id === event.data.id);

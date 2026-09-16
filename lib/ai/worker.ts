@@ -5,6 +5,7 @@ import {modelById, modelUrl, type ModelId} from './models';
 import {cachedTokenizer, gemmaFile, gemmaInstalled, removeGemma, removeTokenizer} from './storage';
 import {loadPackagedLiteRt} from './litert';
 import {fitContext} from './search';
+import {answerStream} from './answer-stream';
 import type {WorkerRequest, WorkerResponse} from './protocol';
 
 let qwen: MLCEngine | null = null;
@@ -157,6 +158,7 @@ async function handle(message: WorkerRequest): Promise<void> {
         send({id, type: 'token', text});
       };
       if (qwen) {
+        const answer = answerStream(token);
         await qwen.resetChat();
         const stream = await qwen.chat.completions.create({
           messages: [{role: 'user', content: context.prompt}],
@@ -167,8 +169,9 @@ async function handle(message: WorkerRequest): Promise<void> {
         });
         for await (const chunk of stream) {
           if (stopped) break;
-          token(chunk.choices[0]?.delta.content ?? '');
+          answer.push(chunk.choices[0]?.delta.content ?? '');
         }
+        answer.finish();
       } else if (gemma) {
         conversation = await gemma.createConversation({
           preface: {extra_context: {enable_thinking: false}},

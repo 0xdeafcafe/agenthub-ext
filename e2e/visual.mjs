@@ -71,7 +71,16 @@ async function capture(page, locator, name) {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
-  await compare(name, await locator.screenshot({animations: 'disabled', caret: 'hide'}));
+  await compare(
+    name,
+    await locator.screenshot({
+      animations: 'disabled',
+      caret: 'hide',
+      // Capture this component independently of the fixed assistant launcher.
+      // The assistant harness captures the launcher and panel separately.
+      style: '#prix-ai-launch { visibility: hidden !important; }',
+    }),
+  );
 }
 
 try {

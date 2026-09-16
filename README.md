@@ -41,6 +41,16 @@ Other browsers:
 
 If the PR has a Language **PR Impact Map** comment, its summary shows up too. Comment exclusion uses our diff counts instead.
 
+## In a real PR
+
+**Changes at a glance** puts the category breakdown and change map beneath the PR tabs.
+
+![PR overview with category percentages, comment-adjusted line counts, and a change map](docs/images/pr-overview.png)
+
+**Focus code** expands code diffs and keeps tests, specs, docs, and generated files collapsed to their headers.
+
+![Files changed with code expanded, other categories collapsed, and comment-only lines excluded from counts](docs/images/review-focus.png)
+
 ## The annoying GitHub bits
 
 The extension downloads the PR diff so counts don’t grow every time you scroll. Commit ranges work too. If the diff is unavailable, incomplete, bigger than 20 MB, or uses an unsupported comparison such as **Hide whitespace**, the panel says the counts only cover loaded files. Missing line counts aren’t zero: categories and the map fall back to file counts, with a label saying so. **Retry full counts** tries the download again. The conversation page uses GitHub’s own totals while the breakdown loads. Cached totals are reused only when both the head and base revisions match.
@@ -161,13 +171,16 @@ For answers, install **Qwen3.5 2B** (~1.1 GB), **Gemma 4 E2B** (~2.0 GB), or bot
 
 Try “What behavior changed?”, “Find edge cases”, or “Check test gaps”. On a huge PR, start with one folder. A small model sees selected excerpts, not the whole repo. Generated files are excluded unless you include them.
 
-This is a draft implementation. Real-model compatibility and answer quality are still being checked; see the [checkpoint and investigation](docs/browser-ai.md). Search works without WebGPU. Inference needs a compatible GPU and browser. Model downloads come from Hugging Face after you request installation; PR code stays in the browser.
+This is experimental. Both models generate answers locally, but the seeded review checks exposed incorrect conclusions and weak test suggestions. Treat answers as leads and inspect their sources; see the [checkpoint and investigation](docs/browser-ai.md). Search works without WebGPU. Inference needs a compatible GPU and browser. Model downloads come from Hugging Face after you request installation; PR code stays in the browser.
 
 ```sh
 npm run test:assistant         # simulated models, UI checks and screenshots
 npm run test:ai:real           # opt-in GPU smoke test; downloads ~3.1 GB
+npm run build
+npm run test:ai:real -- --extension qwen gemma  # actual packaged workers and CSP
+npm run test:ai:real -- --extension --offline qwen gemma  # reuse the cached models
 PRIX_REAL_AI=1 npm run dev:preview  # use real models in the local playground
 node scripts/ai/retrieval.mjs /path/to/saved.diff  # inspect retrieval without a model
 ```
 
-The normal playground clearly labels simulated answers. The real test keeps its isolated profile and results under `.output/`, so subsequent runs reuse downloads. Runtime JS/WASM is packaged with the extension; model weights download separately. The [model investigation](docs/browser-ai.md) records the pinned versions and remaining checks.
+The normal playground clearly labels simulated answers. The real test keeps separate preview and extension profiles under `.output/`, so each downloads its own models once. Reports retain the supplied evidence, expected behavior, answers, citations, and timings for three seeded cases. These are runtime checks, not an automatic correctness grade. Runtime JS/WASM is packaged with the extension; model weights download separately. The [model investigation](docs/browser-ai.md) records the pinned versions and remaining checks.
