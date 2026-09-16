@@ -30,7 +30,8 @@ try {
   const ai = page.frameLocator('#prix-ai-panel iframe');
   await ai.locator('#coverage').filter({hasText: '8 files'}).waitFor();
   assert.equal(await ai.locator('body').evaluate(() => document.referrer), '');
-  assert.match(await ai.locator('#models-summary').textContent(), /simulation/);
+  // The source index and worker status arrive independently.
+  await ai.locator('#models-summary').filter({hasText: 'simulation'}).waitFor();
   assert.equal(await ai.locator('#model-cards button').filter({hasText: 'Install'}).count(), 2);
   await shot('welcome-dark');
   await ai.locator('#question').fill('next');
