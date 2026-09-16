@@ -118,6 +118,10 @@ try {
   await other.locator('.sources .source').first().waitFor();
   await ai.locator('#close').click();
   await page.locator('#prix-ai-panel').waitFor({state: 'hidden'});
+  await ai
+    .locator('#active-model')
+    .filter({hasText: 'No model loaded'})
+    .waitFor({state: 'attached'});
   await other.getByRole('button', {name: 'Install or use Gemma 4 E2B'}).click();
   await other.locator('#active-model').filter({hasText: 'Gemma'}).waitFor();
   await second.close();

@@ -165,6 +165,8 @@ try {
   await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?scenario=unmeasured`);
   await page.getByRole('button', {name: 'Retry full counts', exact: true}).waitFor();
   await page.locator('.prix-change-map > summary').click();
+  // The details toggle event renders the map in a later browser task.
+  await page.locator('.prix-map-row').first().waitFor();
   check(
     'unloaded files use file percentages, never bogus zero-line percentages',
     (await page.locator('.prix-totals').textContent()).includes('line counts incomplete') &&
