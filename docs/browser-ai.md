@@ -1,80 +1,82 @@
-# A local AI assistant for PRs
+# Local PR assistant: implementation checkpoint
 
-Investigated 2026-09-15. This is a proposal, not a shipped feature. No model dependency, automatic download, or inference is included in the extension yet.
+Draft, 2026-09-16. Stacked on PR #1. Both real models now generate answers. The production assistant opens and indexes the PR correctly, including when Chromium omits the iframe referrer. The small review comparison exposed answer errors, so this is not a validated model-quality recommendation.
 
-## Worth doing?
+## What is useful
 
-Yes. Start with **Ask about these changes**, backed by local search and a small model. Keep it optional, download once, and keep the code on the device. A good first version should answer “where did session validation change?” and link to the actual hunks. Treat review findings as suggestions to verify.
+The linked [LangWatch SSO PR](https://github.com/langwatch/langwatch/pull/7633/changes) had 454 files and 84,321 changed lines in the saved snapshot. “Review this PR” is too broad for a 2B model. Better questions identify a behavior and a scope:
 
-The hard part is getting the right code into the prompt. The linked langwatch PR already had 454 files and 84,321 changed lines when inspected. A tiny model cannot usefully read that whole PR in one turn. Our current inventory retains counts, not source hunks, so we need a separate, bounded in-memory hunk index.
+- Where is session expiration checked? What happens after IdP revocation?
+- What proves an organization owns a domain before granting SSO access?
+- Which checks stop SCIM requests from modifying another organization?
+- Which tests cover expiry boundaries, domain reproof, and failure paths?
 
-## Model choices
+The local retrieval probe found relevant identity-provider, domain-verification, SCIM-route, and test hunks for these questions. On the newer 468-file snapshot, SCIM questions now start with `platform/app/ee/scim/routes.ts`, and domain questions start with `sso-domain-reproof.service.ts`. The previous ranking started with tests. Explicit test questions still prefer tests, with distinct files selected before repeated hunks. That measures retrieval, not answer correctness. Inspect `.output/ai-benchmark/retrieval.json` after running the probe; don't assume every top-ranked excerpt is sufficient evidence.
 
-WebLLM **0.2.85** ships Qwen3.5 model entries, worker support, streaming, and cached weights. I checked the published npm bundle as well as the source registry. Transformers.js **4.2.0** is another option, particularly if we add embeddings. Both versions came from the npm registry during this investigation. [WebLLM model registry](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts), [worker and extension support](https://webllm.mlc.ai/docs/user/advanced_usage.html), [Transformers.js WebGPU](https://huggingface.co/docs/transformers.js/guides/webgpu).
+Useful UI additions in this draft:
 
-| Candidate                  | Download / memory evidence                                                                         | Role                                                               |
-| -------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Qwen3.5 0.8B, WebLLM q4f16 | About 424 MB of weight shards; registry estimates 1,629 MB VRAM with its 4K context configuration  | Small download option; search assistance and brief explanations    |
-| Qwen3.5 2B, WebLLM q4f16   | About 1.06 GB of weight shards; registry estimates 2,245 MB VRAM with its 4K context configuration | First candidate to evaluate for cited answers and small reviews    |
-| Qwen3.5 4B, WebLLM q4f16   | About 2.37 GB of weight shards; registry estimates 3,868 MB VRAM with its 4K context configuration | Optional larger model, if it earns the extra memory in evaluations |
-| Gemma 4 E2B, LiteRT-LM Web | The supported web artifact is about 2.01 GB; actual browser memory still needs measurement         | Compare against Qwen after the basic experience works              |
+- Search before downloading anything, with file/line jumps and raw excerpts.
+- Suggested folder scopes, skipping a common wrapper directory.
+- Explain changes, find edge cases, and check test gaps shortcuts.
+- Both models installed side by side; one worker active per panel.
+- Compare the same question and source set with the other model.
+- Visible input tokens, first-token time, elapsed time, inspected files, and omissions.
+- Stop, clear, refresh source context, unload memory, and remove downloads.
+- Resizable extension iframe outside GitHub's virtualized layout.
+- A queued question runs after loading a model. Task selection also applies to typed questions.
+- Copy and retry answers; comparisons preserve the original question, prior-question context, and excerpts.
+- Readable headings, lists, code blocks, and clickable validated citations. HTML and external links stay inert.
+- Stop generation while keeping the model loaded. Closing the panel releases the runtime and keeps the conversation until page navigation or reload.
+- Retry or remove incomplete downloads offline. A browser lock prevents separate tabs from loading competing model runtimes or removing an in-use download.
 
-The download measurements come from repository file metadata, not downloaded weights. They exclude runtime files and, for Qwen, tokenizers/configuration. Registry VRAM figures are estimates, not measurements on Arc. Sources: [Qwen 0.8B files](https://huggingface.co/mlc-ai/Qwen3.5-0.8B-q4f16_1-MLC/tree/main), [2B files](https://huggingface.co/mlc-ai/Qwen3.5-2B-q4f16_1-MLC/tree/main), [4B files](https://huggingface.co/mlc-ai/Qwen3.5-4B-q4f16_1-MLC/tree/main), [Gemma E2B files](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/main).
+## Models and current judgment
 
-For reproducibility, the metadata revisions inspected were Qwen 0.8B `0ec138972555613c1d7812a821778ad0398c8790` and Gemma E2B `b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1`. Pin runtime and model revisions together in an implementation; don't fetch mutable `main` assets.
+| Model            | Runtime          | Download                     | Judgment                                                                                                     |
+| ---------------- | ---------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Qwen3.5 2B q4f16 | WebLLM 0.2.85    | ~1.08 GB including tokenizer | Smaller download. Real inference works; the review probe exposed unsupported claims and logic errors.        |
+| Gemma 4 E2B web  | LiteRT-LM 0.17.0 | ~2.04 GB including tokenizer | Real inference works. Better abstention in the missing-evidence probe, but weak regression-test suggestions. |
 
-Gemma 4 has an actual browser path: Google's new **LiteRT-LM JavaScript API** explicitly supports the E2B and E4B web artifacts, with streaming and cancellation. It is still an early preview. The older MediaPipe LLM API is in maintenance mode, so don't start there. Gemma 4 wasn't in the published WebLLM bundle I inspected. [LiteRT-LM Web API](https://developers.google.com/edge/litert-lm/js), [MediaPipe migration notice](https://developers.google.com/edge/mediapipe/solutions/genai/llm_inference/web_js).
+These sizes come from the pinned artifacts, not peak memory measurements. WebLLM's registry estimates ~2.25 GB VRAM for this Qwen configuration. Actual Arc memory and throughput have not been measured. [WebLLM registry](https://github.com/mlc-ai/web-llm/blob/main/src/config.ts), [Qwen files](https://huggingface.co/mlc-ai/Qwen3.5-2B-q4f16_1-MLC/tree/dd74e9c8a20c4546df85c844103bff87b6dcacad), [Gemma files](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/tree/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1).
 
-Google's much smaller mobile/text-only memory figures refer to specific optimized variants. They are not the download size or measured browser footprint of the E2B web artifact. [Gemma memory guide](https://ai.google.dev/gemma/docs/core).
+Pins live in `lib/ai/models.ts`. Runtime dependencies and tokenizer package are pinned exactly. The Qwen WASM download has a checked SHA-256. LiteRT's compatible JS/WASM and tokenizer runtime are copied from installed packages into the extension at build time. The browser downloads weights and tokenizer data, never executable runtime code. [Chrome CSP](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy), [LiteRT-LM JS API](https://developers.google.com/edge/litert-lm/js).
 
-**Recommendation:** prototype with WebLLM + Qwen3.5 2B, offer 0.8B as the small option, and benchmark Gemma E2B separately. This is an implementation judgment; model quality on this repository hasn't been measured.
+## Context without wasting memory
 
-## What the user gets
+The assistant fetches the current comparison's diff only when opened. The background bridge checks that the request matches the sender's PR or commit range. The full diff is capped at 20 MB and must parse completely. Source and chat stay in memory; weights use separate browser caches.
 
-- **Find changes:** “Where did we change authorization?” returns ranked files and hunks. Plain text/path search works without loading a model.
-- **Ask:** “How does this change session expiry?” answers with clickable file/line references and says when the diff lacks enough context.
-- **Explain selection:** choose a file, folder, map cluster, or a few hunks; get a short explanation.
-- **Quick review:** inspect the chosen scope for likely bugs and missing cases. Show supporting code for every finding and which files were inspected.
-- **Follow up:** retain a short conversation scoped to the current PR revision. Stop, clear, unload the model, and remove its download are visible actions.
+The index retains up to 2 million characters, 48,000 per file, in 65-line chunks. Long lines are shortened at 800 characters. It preserves old/new line numbers and reports omitted chunks. Generated files are deprioritized during indexing and excluded from retrieval by default. A SHA-256 of the diff invalidates conversation state when refreshed source changes.
 
-Put **Ask AI** on the Changes page. Open a resizable panel outside GitHub's virtualized scroller. Offer “Search changes”, “Explain this folder”, and “Review selected files” before an empty chat box. First use shows the model download size and progress; subsequent use reuses the cached weights. Loading and generation must not block scrolling or category controls.
+Retrieval uses paths, split identifiers, text matches, bounded synonym expansion, and file diversity. Behavior questions give matching implementation a modest score preference; explicit test and documentation questions change that preference. Test-gap prompts pair changed application files with tests sharing their basename. This is lexical retrieval; embeddings and model-driven tool loops are deferred until they demonstrate better retrieval on fixed questions.
 
-## How it would fit
+The runtime's actual tokenizer fits evidence into a 2,700-token prompt inside a 4,096-token context, reserving room for an answer of up to 700 tokens and model template overhead. Only the prior question is retained for follow-up context. The UI shows every supplied excerpt and labels the file sample. Citations are checked against those source IDs; invented references do not become links. A small DOM renderer formats Markdown using text nodes without interpreting model-provided HTML or URLs.
 
-```mermaid
-flowchart LR
-  Diff[PR diff] --> Index[Hunks with paths and line ranges]
-  Question[Question + chosen scope] --> Search[Local search]
-  Index --> Search
-  Search --> Context[Small relevant context]
-  Context --> Worker[Model in extension worker]
-  Worker --> Answer[Streamed answer with checked citations]
-  Answer --> Jump[Open the matching file or hunk]
-```
+PR content is untrusted evidence. The assistant has no code execution, edit, posting, or arbitrary network tools. Prompting alone cannot guarantee correct or injection-proof answers, so this remains a review aid with inspectable evidence.
 
-1. Parse source hunks alongside inventory counts only when AI is enabled. Keep old/new line numbers, file path, comparison range, and head/base SHA. Bound memory and report omitted files. Clear on navigation or revision change.
-2. Start with path/symbol/text ranking. An optional small embedding model can improve meaning-based retrieval later; it adds another download, so measure whether it helps. Exclude generated files by default but let the user include them.
-3. Retrieve a few relevant hunks, then build a token-budgeted prompt. Start around 4K context using the actual tokenizer, leaving room for the answer. Fetch additional file context only through explicit, repo-scoped read tools.
-4. Run inference in a dedicated worker owned by an extension page. Use a small packaged extension page/window for an Arc prototype; test side-panel availability before depending on it. Keep the GitHub content script as a thin UI/data bridge. A background service worker routes messages, rather than being the sole owner of a model that should survive navigation.
-5. Give the model bounded read tools: `search_changes`, `read_hunk`, `list_files`. Check arguments, cap calls and tokens, support cancellation, and validate citations against the indexed hunks. Render model output as text or sanitized Markdown. PR text and comments are source material, never instructions to execute tools or send data elsewhere.
-6. Cache weights separately from PR data. Keep source and chat in memory by default, scope every request to its tab/revision, and abort stale work. Nothing posts a GitHub review or edits code automatically.
+## Validation and remaining work
 
-WebLLM supports workers and extension service workers, but its docs warn that service workers can be killed by the browser. A restart/reload path is necessary even if that architecture is used later. [Worker lifecycle notes](https://webllm.mlc.ai/docs/user/advanced_usage.html).
+`npm run test:assistant` uses an explicitly labelled simulated worker for repeatable UI testing. It covers an empty referrer, queued questions, two installs, copying, retry, comparison, stop without unloading, incomplete-download removal, conversation retention, competition between tabs, source links, navigation, and screenshots in both themes and mobile sizing. Simulated installs do not require gigabytes of free storage. `npm run test:extension` checks the real packaged iframe, background index, and local search. Normal CI never downloads model weights.
 
-## Extension constraints
+`npm run test:ai:real` is opt-in and uses an isolated persistent Chromium profile. After building, add `-- --extension qwen gemma` to exercise the packaged workers under the extension's unchanged CSP. Add `--offline` after an online run to disable network access and reuse the downloaded models. Preview and extension caches are separate. Each model has its own report under `.output/ai-benchmark/`, including evidence, expected behavior, answers, citations, and timing. `node scripts/ai/retrieval.mjs /path/to/PR.diff` records source selection for the SSO questions above.
 
-Our current manifest only allows GitHub and its patch host, and its default policy disables WebAssembly. An AI build needs an explicit WASM policy, narrowly scoped optional model-download access, and packaged JavaScript/WASM assets. Download model weights as data; don't copy a demo that loads executable runtime code from a CDN. [Chrome extension CSP](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy), [remote hosted code rules](https://developer.chrome.com/docs/extensions/develop/migrate/remote-hosted-code).
+The three seeded cases cover an inclusive-to-exclusive expiry boundary, an OR-to-AND tenant guard regression, and a SAML question with only unrelated session code supplied. Reports check runtime completion and citation IDs; they do not grade factual correctness. Inspect the retained answers against each case's expected behavior.
 
-Check `navigator.gpu`, adapter availability, limits, and required features at runtime. Handle insufficient storage, interrupted downloads, lost GPU devices, and multiple PR tabs. The installed Arc version here is 1.164.0; that alone doesn't prove its GPU/runtime compatibility. Firefox and Safari need their own verification. Basic search should remain available when inference can't run.
+The [retained 2026-09-16 run](ai-benchmark.json) includes the exact prompt, pinned models, source hashes, synthetic evidence, raw answers, and manual assessments. Both packaged workers loaded cached models and completed all three questions with networking disabled in Chromium 151.0.7922.34. Qwen loaded in 3.1 seconds; Gemma loaded in 4.3 seconds, then took another 30.9 seconds to produce its first answer token. Later Gemma questions started streaming in about 0.4 seconds. These are single-machine observations, not performance guarantees.
 
-## What to measure before shipping
+Neither model passed the review comparison cleanly. Qwen described the expiry change correctly but omitted its citation, repeated the tenant finding until its answer was cut off, and invented replay protection from unrelated code. Gemma suggested a tenant test that passes both versions, and its otherwise appropriate SAML abstention described the deleted expiry expression without distinguishing it from the new one. Valid citation IDs do not establish that a claim follows from the evidence.
 
-No tokens/second, latency, review accuracy, or real Arc inference results were measured in this investigation. Don't turn model-card benchmarks into product claims.
+The packaged runtimes include the tokenizer UMD-to-ESM wrapper and a LiteRT logger compatibility fix: its classic-script fallback depends on block-function hoisting, which strict module workers do not provide. Both LiteRT variants have a regression check using the installed runtime's logger. Qwen's empty thinking preamble is removed across streamed token boundaries. Source citations with old/new line labels are checked against supplied IDs before linking.
 
-- **Real models, opt-in test:** cold download, warm load, first token, answer speed, peak memory, cache reuse, cancellation, GPU loss, and tab navigation on Arc/Chrome and at least one constrained laptop.
-- **Useful answers:** a fixed set of questions and seeded bugs across TS, React, Go, tests, and config. Track retrieval success, valid citations, supported claims, missed bugs, and false findings. Compare 0.8B, 2B, and Gemma on the same prompts.
-- **Large PRs:** the linked langwatch PR, generated-heavy changes, renamed files, missing context, unavailable diffs, and commit-range views. Show exactly what was searched or reviewed.
-- **Normal CI:** deterministic fake worker for download/progress/cancel/error states, stale response rejection, safe rendering, and citation navigation. Add screenshots for compact/expanded chat in both themes. Keep GPU downloads out of ordinary pull-request tests.
-- **Packaging check:** assert runtime assets are bundled and model downloads are opt-in. Verify the normal extension still starts with no AI network requests.
+Public model artifacts support CORS, so model-host permissions and their native prompt have been removed. The manifest grants access only to GitHub and its patch host. `npm run test:ai:install` exercises the actual Install/Use buttons in the production iframe against real downloads, followed by answer generation, stop/retry, closing/reopening, and offline cache loads. It uses its own persistent `.output/ai-install-profile` and records `.output/ai-benchmark/real-install.json`.
 
-Ship search and cited Q&A first. Add review once the evaluation shows it finds useful problems without drowning the user in guesses.
+Real stop/retry testing caught a WebLLM lock leak: breaking its async iterator after interruption bypasses the runtime's lock release. The worker now interrupts and drains that iterator before accepting another question. A five-second UI fallback unloads an unresponsive worker. Qwen cache removal enumerates known artifacts instead of calling WebLLM's removal helper, which can fetch a missing shard manifest even during removal.
+
+`npm run unpacked` creates `dist/pr-impact-unpacked` with all runtime JS/WASM and an `INSTALL.txt`. Load that directory in Chrome or Arc's extensions page. `PRIX_EXTENSION_DIR=dist/pr-impact-unpacked node e2e/extension.mjs` verifies the delivered folder itself.
+
+Still required before calling this ready:
+
+- Expand the small seeded comparison to fixed SSO questions with reviewed expected answers. Neither model earns a “best for review” recommendation from these samples.
+- Broaden device testing for storage pressure and actual GPU loss. Partial cleanup and cross-tab exclusion have automated coverage; real GPU-loss recovery is not yet forced in the harness.
+- Exercise private PRs and live virtualization in Arc. Firefox and Safari inference are unverified.
+- Measure retrieval against a labelled set: improved ranking alone does not prove the selected excerpts answer the question.
+
+No review is posted automatically, and nothing in this draft is a release.

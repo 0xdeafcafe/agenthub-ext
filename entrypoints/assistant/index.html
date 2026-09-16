@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ask this PR · PR Impact</title>
+  </head>
+  <body>
+    <main id="assistant">
+      <header class="app-header">
+        <div>
+          <h1>Ask this PR <span class="local-badge">On device</span></h1>
+          <p id="pr-title">Your code stays in this browser.</p>
+        </div>
+        <button id="close" class="icon-button" aria-label="Close assistant">×</button>
+      </header>
+      <div class="scope-bar">
+        <label for="scope">Scope</label
+        ><input
+          id="scope"
+          list="scope-options"
+          placeholder="All changed files"
+          autocomplete="off"
+        /><datalist id="scope-options"></datalist
+        ><button id="refresh" class="icon-button" aria-label="Refresh PR context">↻</button>
+      </div>
+      <div class="index-meta">
+        <span id="coverage" role="status">Loading changes…</span
+        ><label><input type="checkbox" id="include-generated" /> Include generated</label>
+      </div>
+      <details id="models">
+        <summary>Models <span id="models-summary">Choose a download</span></summary>
+        <p class="muted">
+          Install either or both. Downloads come from Hugging Face; your PR code stays here. One PR
+          tab can use a model at a time. Closing this panel frees its memory.
+        </p>
+        <div id="model-cards"></div>
+        <div class="model-actions">
+          <button id="install-both">Install both · ~3.1 GB</button
+          ><button id="unload" disabled>Unload from memory</button>
+        </div>
+        <div id="load-progress" hidden>
+          <progress max="1" value="0"></progress><span id="load-message"></span
+          ><button id="cancel-load">Cancel</button>
+        </div>
+        <p id="model-message" role="status"></p>
+      </details>
+      <section id="conversation" aria-label="Search results and conversation" tabindex="-1">
+        <div id="welcome">
+          <span class="eyebrow">A second look, with sources</span>
+          <h2>What needs a closer look?</h2>
+          <p>Search the diff, trace a behavior change, or review a small part of the PR.</p>
+          <div id="quick-questions"></div>
+          <p class="muted">Start with a folder</p>
+          <div id="suggested-scopes"></div>
+          <p class="muted">
+            Search works immediately. Download a model for answers and review suggestions. Models
+            can be wrong; check their cited code.
+          </p>
+        </div>
+        <div id="messages"></div>
+      </section>
+      <footer class="composer">
+        <div class="composer-controls">
+          <label for="mode" class="sr-only">Task</label
+          ><select id="mode">
+            <option value="ask">Ask a question</option>
+            <option value="explain">Explain changes</option>
+            <option value="review">Find edge cases</option>
+            <option value="tests">Check test gaps</option></select
+          ><span id="active-model">No model loaded</span
+          ><button id="clear" class="text-button">Clear</button>
+        </div>
+        <label for="question" class="sr-only">Question about these changes</label
+        ><textarea
+          id="question"
+          rows="2"
+          maxlength="1200"
+          placeholder="Where did session validation change?"
+        ></textarea>
+        <div class="send-row">
+          <span id="task-status" role="status">Loading the diff…</span
+          ><button id="search" disabled>Search</button
+          ><button id="send" class="primary" disabled>Ask</button
+          ><button id="stop" hidden>Stop</button>
+        </div>
+      </footer>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,11 +1,12 @@
 import {defineBackground} from 'wxt/utils/define-background';
 import {browser} from 'wxt/browser';
 import {diffPathForPage} from '../lib/diff';
-import {readDiffResponse} from '../lib/inventory';
+import {readDiffResponse, readDiffText} from '../lib/inventory';
+import {indexPatch} from '../lib/ai/index';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== 'prix:inventory' && message?.type !== 'prix:settings') return;
+    if (!['prix:inventory', 'prix:settings', 'prix:ai-index'].includes(message?.type)) return;
     // The page can request only its own PR/range, never an arbitrary URL.
     const source = sender.url ? new URL(sender.url) : null;
     if (message.type === 'prix:settings') {
@@ -36,9 +37,14 @@ export default defineBackground(() => {
           credentials: 'include',
           signal: AbortSignal.timeout(15000),
         });
-        sendResponse({inventory: await readDiffResponse(response)});
-      } catch {
-        sendResponse({inventory: null});
+        if (message.type === 'prix:ai-index')
+          sendResponse({index: await indexPatch(await readDiffText(response))});
+        else sendResponse({inventory: await readDiffResponse(response)});
+      } catch (error) {
+        sendResponse({
+          inventory: null,
+          error: error instanceof Error ? error.message : 'Could not load the diff.',
+        });
       }
     })();
     return true;

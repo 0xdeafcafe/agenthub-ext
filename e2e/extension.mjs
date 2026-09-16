@@ -11,7 +11,7 @@ import {browserPath} from './browser.mjs';
 import {startGithubFixture} from './github-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const extension = resolve(root, '.output/chrome-mv3');
+const extension = resolve(root, process.env.PRIX_EXTENSION_DIR ?? '.output/chrome-mv3');
 const preview = await startPreview({port: 0, watch: false});
 const profile = await mkdtemp(join(tmpdir(), 'prix-local-extension-'));
 const errors = [];
@@ -97,6 +97,20 @@ try {
     });
     console.log(`PASS production extension: ${view}, persistent filters, remounts, screenshot`);
   }
+  await page.locator('#prix-ai-launch').click();
+  const assistant = page.frameLocator('#prix-ai-panel iframe');
+  await assistant.locator('#coverage').filter({hasText: '8 files'}).waitFor();
+  await assistant.locator('#models-summary').filter({hasText: '0 of 2 installed'}).waitFor();
+  await assistant.locator('#question').fill('next');
+  await assistant.locator('#search').click();
+  await assistant.locator('.sources .source').first().waitFor();
+  await page
+    .locator('#prix-ai-panel')
+    .screenshot({path: resolve(root, 'e2e/screenshots/local/assistant-extension.png')});
+  console.log(
+    'PASS production assistant: extension iframe, background source index, packaged worker, local search',
+  );
+  await assistant.locator('#close').click();
   assert.ok(workerDownloads >= 2, 'the background worker requested both inventories');
   assert.equal(
     fixture.metrics.patchDownloads,

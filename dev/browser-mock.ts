@@ -15,6 +15,14 @@ window.addEventListener('storage', (event) => {
     });
 });
 export const browser = {
+  permissions: {
+    async request(): Promise<boolean> {
+      return true;
+    },
+    async contains(): Promise<boolean> {
+      return true;
+    },
+  },
   runtime: {
     id: 'prix-local-preview',
     getURL: (path: string): string =>
