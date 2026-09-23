@@ -71,7 +71,16 @@ async function capture(page, locator, name) {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
-  await compare(name, await locator.screenshot({animations: 'disabled', caret: 'hide'}));
+  await compare(
+    name,
+    await locator.screenshot({
+      animations: 'disabled',
+      caret: 'hide',
+      // Capture this component independently of the fixed assistant launcher.
+      // The assistant harness captures the launcher and panel separately.
+      style: '#prix-ai-launch { visibility: hidden !important; }',
+    }),
+  );
 }
 
 try {
@@ -87,7 +96,9 @@ try {
       const page = await context.newPage();
       await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?theme=${theme}`);
       await page.waitForFunction(() =>
-        document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+        document
+          .querySelector('.prix-coverage')
+          ?.textContent?.startsWith('Counted from the full diff'),
       );
       await stableFonts(page);
       if (injectRegression)

@@ -25,8 +25,13 @@ export function injectFileControls(header: Element, options: FileControlOptions)
     summary.type = 'button';
     summary.setAttribute('aria-label', 'File options');
     summary.className = 'prix-file-menu';
-    summary.textContent = '⋯';
-    summary.title = 'Override visibility or explain this file’s category';
+    const badge = document.createElement('span');
+    badge.className = 'prix-badge';
+    const chevron = document.createElement('span');
+    chevron.className = 'prix-file-menu-chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '▾';
+    summary.append(badge, chevron);
     const panel = document.createElement('dialog');
     panel.className = 'prix-file-popover';
     panel.setAttribute('aria-label', 'File review options');
@@ -87,6 +92,11 @@ export function injectFileControls(header: Element, options: FileControlOptions)
   const category = controls.querySelector<HTMLSelectElement>('.prix-file-category')!;
   visibility.value = options.override ?? '';
   category.value = options.overriddenCategory ?? '';
+  const badge = controls.querySelector('.prix-badge')!;
+  if (badge.textContent !== options.category) badge.textContent = options.category;
+  const menu = controls.querySelector<HTMLElement>('.prix-file-menu')!;
+  const title = `${options.category} - change this file’s visibility or category`;
+  if (menu.title !== title) menu.title = title;
   const reason = controls.querySelector('.prix-classification-reason')!;
   if (reason.textContent !== options.explanation) reason.textContent = options.explanation;
 }

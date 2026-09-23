@@ -11,7 +11,7 @@ import {browserPath} from './browser.mjs';
 import {startGithubFixture} from './github-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const extension = resolve(root, '.output/chrome-mv3');
+const extension = resolve(root, process.env.PRIX_EXTENSION_DIR ?? '.output/chrome-mv3');
 const preview = await startPreview({port: 0, watch: false});
 const profile = await mkdtemp(join(tmpdir(), 'prix-local-extension-'));
 const errors = [];
@@ -50,11 +50,11 @@ try {
   await mkdir(resolve(root, 'e2e/screenshots/local'), {recursive: true});
   await page.goto('https://github.com/acme/review-kit/pull/42?extension=1');
   await page.waitForFunction(() =>
-    document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+    document.querySelector('.prix-coverage')?.textContent?.startsWith('Counted from the full diff'),
   );
   assert.equal(await page.locator('.fixture-file').count(), 0);
   assert.equal(await page.locator('#prix-bar').count(), 1);
-  assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4298 lines');
+  assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4,298 lines');
   assert.equal(
     await page.locator('#prix-bar input, #prix-bar .prix-chip, #prix-bar .prix-bar-footer').count(),
     0,
@@ -63,14 +63,16 @@ try {
   for (const view of ['files', 'changes']) {
     await page.goto(`https://github.com/acme/review-kit/pull/42/${view}?extension=1&theme=dark`);
     await page.waitForFunction(
-      () => document.querySelector('.prix-totals')?.textContent === '8 files · 4298 lines',
+      () => document.querySelector('.prix-totals')?.textContent === '8 files · 4,298 lines',
     );
     await page.waitForFunction(() =>
-      document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+      document
+        .querySelector('.prix-coverage')
+        ?.textContent?.startsWith('Counted from the full diff'),
     );
     await page.getByLabel('Exclude comment-only lines', {exact: true}).check();
     await page.waitForFunction(
-      () => document.querySelector('.prix-totals')?.textContent === '8 files · 4283 lines',
+      () => document.querySelector('.prix-totals')?.textContent === '8 files · 4,283 lines',
     );
     await page.getByLabel('Exclude comment-only lines', {exact: true}).uncheck();
     assert.equal(await page.locator('#prix-bar').count(), 1);
@@ -91,12 +93,26 @@ try {
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
-    assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4298 lines');
+    assert.equal(await page.locator('.prix-totals').textContent(), '8 files · 4,298 lines');
     await page.screenshot({
       path: resolve(root, `e2e/screenshots/local/extension-${view}-dark.png`),
     });
     console.log(`PASS production extension: ${view}, persistent filters, remounts, screenshot`);
   }
+  await page.locator('#prix-ai-launch').click();
+  const assistant = page.frameLocator('#prix-ai-panel iframe');
+  await assistant.locator('#coverage').filter({hasText: '8 files'}).waitFor();
+  await assistant.locator('#models-summary').filter({hasText: '0 of 2 installed'}).waitFor();
+  await assistant.locator('#question').fill('next');
+  await assistant.locator('#search').click();
+  await assistant.locator('.sources .source').first().waitFor();
+  await page
+    .locator('#prix-ai-panel')
+    .screenshot({path: resolve(root, 'e2e/screenshots/local/assistant-extension.png')});
+  console.log(
+    'PASS production assistant: extension iframe, background source index, packaged worker, local search',
+  );
+  await assistant.locator('#close').click();
   assert.ok(workerDownloads >= 2, 'the background worker requested both inventories');
   assert.equal(
     fixture.metrics.patchDownloads,
@@ -107,7 +123,7 @@ try {
     'https://github.com/acme/review-kit/pull/42/changes?extension=1&mode=virtualization',
   );
   await page.waitForFunction(() =>
-    document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+    document.querySelector('.prix-coverage')?.textContent?.startsWith('Counted from the full diff'),
   );
   await page.getByRole('button', {name: 'Focus code', exact: true}).click();
   await page.evaluate(() => window.prixHarness.virtualScroll(800));
@@ -130,14 +146,14 @@ try {
   await popup.locator('#exclude-comments').check();
   await popup.locator('#reset-repo').click();
   await page.waitForFunction(
-    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4283 lines',
+    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4,283 lines',
   );
   await popup.close();
   console.log('PASS production worker fallback, comment counting, popup, live storage changes');
   await page.evaluate(() => localStorage.setItem('prix-disabled', '1'));
   await page.reload();
   await page.locator('.fixture-file-header').first().waitFor();
-  assert.equal(await page.locator('#prix-bar, .prix-badge, #my-prs-repo-tab').count(), 0);
+  assert.equal(await page.locator('#prix-bar, .prix-badge, .prix-pulls-menu').count(), 0);
   assert.deepEqual(errors, []);
   console.log('PASS production kill switch; no content-script errors');
 } finally {

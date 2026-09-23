@@ -5,6 +5,10 @@ export type InventoryResult = {inventory: DiffInventory | null; reason?: string}
 const MAX_DIFF_BYTES = 20 * 1024 * 1024;
 
 export async function readDiffResponse(response: Response): Promise<DiffInventory> {
+  return parseDiff(await readDiffText(response));
+}
+
+export async function readDiffText(response: Response): Promise<string> {
   if (!response.ok || !response.body) throw new Error('GitHub could not supply the full diff');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -22,7 +26,7 @@ export async function readDiffResponse(response: Response): Promise<DiffInventor
       parts.push(decoder.decode(value, {stream: true}));
     }
     parts.push(decoder.decode());
-    return parseDiff(parts.join(''));
+    return parts.join('');
   } finally {
     reader.releaseLock();
   }

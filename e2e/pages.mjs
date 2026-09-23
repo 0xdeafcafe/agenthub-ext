@@ -34,7 +34,7 @@ const settle = () =>
   );
 const inventory = () =>
   page.waitForFunction(() =>
-    document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+    document.querySelector('.prix-coverage')?.textContent?.startsWith('Counted from the full diff'),
   );
 
 try {
@@ -48,7 +48,7 @@ try {
   });
   await page.goto(`${preview.url}/acme/review-kit/pull/42`);
   await page.waitForFunction(
-    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4298 lines',
+    () => document.querySelector('.prix-totals')?.textContent === '8 files · 4,298 lines',
   );
   check(
     'cold overview uses native totals while the diff downloads',
@@ -81,15 +81,44 @@ try {
     }),
   );
   await page.screenshot({path: resolve(output, 'overview-summary.png')});
+  await page.locator('#pull-requests-tab').hover();
+  await page.locator('.prix-pulls-menu').waitFor();
+  check(
+    'Pull requests hover menu matches GitHub’s views, with nothing added to the nav',
+    JSON.stringify(await page.locator('.prix-pulls-menu a').allTextContents()) ===
+      JSON.stringify([
+        'Pull requests',
+        'Authored by me',
+        'Assigned to me',
+        'Involves me',
+        'Review requests',
+        'Milestones',
+        'Labels',
+      ]) && (await page.locator('.fixture-repo-nav > li').count()) === 4,
+  );
+  await page.screenshot({
+    path: resolve(output, 'pulls-menu-light.png'),
+    clip: {x: 0, y: 0, width: 520, height: 470},
+  });
+  await page.mouse.move(700, 900);
+  await page.locator('.prix-pulls-menu').waitFor({state: 'detached'});
   await page.getByRole('button', {name: 'Light / dark', exact: true}).click();
   await page.screenshot({path: resolve(output, 'overview-summary-dark.png')});
+  await page.locator('#pull-requests-tab').hover();
+  await page.locator('.prix-pulls-menu').waitFor();
+  await page.screenshot({
+    path: resolve(output, 'pulls-menu-dark.png'),
+    clip: {x: 0, y: 0, width: 520, height: 470},
+  });
+  await page.mouse.move(700, 900);
+  await page.locator('.prix-pulls-menu').waitFor({state: 'detached'});
   check(
     'overview spans the wrapping GitHub header layout',
     await page.locator('#prix-bar').evaluate((el) => el.getBoundingClientRect().width > 1100),
   );
   check(
     'overview has full counts without any diff containers',
-    (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines' &&
+    (await page.locator('.prix-totals').textContent()) === '8 files · 4,298 lines' &&
       (await page.locator('.fixture-file').count()) === 0,
   );
   check(
@@ -144,7 +173,7 @@ try {
   await inventory();
   check(
     'overview honors saved comment exclusion with an explicit label',
-    (await page.locator('.prix-totals').textContent()) === '8 files · 4283 lines' &&
+    (await page.locator('.prix-totals').textContent()) === '8 files · 4,283 lines' &&
       (await page.locator('.prix-coverage').textContent()).includes('comment-only lines excluded'),
   );
   await page.route('**/pull/42.diff', (route) => route.fulfill({status: 503, body: 'Unavailable'}));
@@ -156,7 +185,7 @@ try {
   );
   check(
     'failed overview download retains GitHub totals and hides the unavailable map',
-    (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines' &&
+    (await page.locator('.prix-totals').textContent()) === '8 files · 4,298 lines' &&
       !(await page.locator('.prix-change-map').isVisible()),
   );
   await page.unroute('**/pull/42.diff');
@@ -165,6 +194,8 @@ try {
   await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?scenario=unmeasured`);
   await page.getByRole('button', {name: 'Retry full counts', exact: true}).waitFor();
   await page.locator('.prix-change-map > summary').click();
+  // The details toggle event renders the map in a later browser task.
+  await page.locator('.prix-map-row').first().waitFor();
   check(
     'unloaded files use file percentages, never bogus zero-line percentages',
     (await page.locator('.prix-totals').textContent()).includes('line counts incomplete') &&
@@ -184,7 +215,7 @@ try {
   check(
     'retry fills every map file without scrolling or visiting another page',
     !(await page.locator('.prix-map-list').textContent()).includes('unavailable') &&
-      (await page.locator('.prix-totals').textContent()) === '8 files · 4283 lines',
+      (await page.locator('.prix-totals').textContent()) === '8 files · 4,283 lines',
   );
   await page.goto(`${preview.url}/acme/review-kit/pull/42/changes`);
   await inventory();
@@ -252,7 +283,7 @@ try {
                 : 'code';
         return file.querySelector('.prix-badge')?.textContent === expected;
       }),
-    )) && (await page.locator('.prix-totals').textContent()) === '8 files · 4283 lines',
+    )) && (await page.locator('.prix-totals').textContent()) === '8 files · 4,283 lines',
   );
   await page.getByRole('button', {name: 'Focus code', exact: true}).click();
   for (const top of [0, 450, 900, 0, 500, 1000, 0]) {

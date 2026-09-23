@@ -578,20 +578,37 @@
 }
 .prix-file-controls {
   display: inline-flex;
-  margin-left: 5px;
+  margin-left: 8px;
   align-items: center;
 }
 .prix-file-menu {
-  border: 1px solid var(--borderColor-muted, #d1d9e0);
-  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 10px;
   background: transparent;
   color: var(--fgColor-muted, #656d76);
-  padding: 0 6px;
+  padding: 0 6px 0 8px;
   cursor: pointer;
   font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+}
+.prix-file-menu:hover {
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-muted, #f6f8fa);
+}
+.prix-file-menu .prix-badge {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+}
+.prix-file-menu-chevron {
+  font-size: 9px;
+  opacity: 0.8;
 }
 .prix-file-popover {
   color: var(--fgColor-default, #1f2328);
@@ -721,7 +738,6 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   animation: prix-flash-outline 1.2s ease-out;
 }
 
-/* Collapsed: header child (tagged .prix-header by the adapter) stays, rest goes */
 .prix-view-note {
   color: var(--fgColor-muted, #656d76);
   margin: 10px 0 14px;
@@ -740,10 +756,12 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   color: var(--fgColor-accent, #0969da);
   font-weight: 600;
 }
-.prix-virtual-muted > .prix-header {
+.prix-virtual-muted .prix-header {
   opacity: 0.65;
 }
-.prix-collapsed > :not(.prix-header) {
+/* Preserve the header at any depth, hiding body siblings along its ancestor chain. */
+.prix-collapsed > :not(.prix-header, .prix-header-wrapper),
+.prix-collapsed .prix-header-wrapper > :not(.prix-header, .prix-header-wrapper) {
   display: none !important;
 }
 
@@ -765,19 +783,63 @@ li.prix-tree-hidden:has(> ul) > :first-child {
    min-width reserves its geometry so a count arriving later changes text
    only, never layout. My PRs gets the accent fill (it reads as "yours");
    Review requested keeps GitHub's default grey Counter so they don't compete. */
-.prix-tab-counter.Counter {
-  min-width: 26px;
-  text-align: center;
+.prix-pulls-menu {
+  position: absolute;
+  z-index: 100;
+  box-sizing: border-box;
+  min-width: 232px;
+  padding: 8px;
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 12px;
+  box-shadow: var(--shadow-floating-large, 0 12px 48px #25292e33);
+  font:
+    14px/20px -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
 }
-
-.prix-tab-counter.Counter:empty {
-  background: transparent;
-  color: transparent;
+.prix-pulls-menu a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--fgColor-default, #1f2328);
+  text-decoration: none;
 }
-
-.prix-tab-counter--accent.Counter:not(:empty) {
+.prix-pulls-menu a svg {
+  flex: none;
+  fill: var(--fgColor-muted, #656d76);
+}
+.prix-pulls-menu a:hover,
+.prix-pulls-menu a:focus-visible,
+.prix-pulls-menu a[aria-current='page'] {
+  background: var(--bgColor-neutral-muted, #818b981f);
+  text-decoration: none;
+}
+.prix-pulls-menu a:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+.prix-pulls-menu a[aria-current='page'] {
+  font-weight: 600;
+}
+.prix-pulls-menu a[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 6px;
+  bottom: 6px;
+  width: 4px;
+  border-radius: 6px;
   background: var(--bgColor-accent-emphasis, #0969da);
-  color: var(--fgColor-onEmphasis, #ffffff);
+}
+.prix-pulls-menu-divider {
+  height: 1px;
+  margin: 8px -8px;
+  background: var(--borderColor-muted, #d1d9e0b3);
 }
 
 /* Conversation summary joins the PR tabs instead of floating in another card. */
@@ -884,4 +946,67 @@ li.prix-tree-hidden:has(> ul) > :first-child {
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: 5px;
   padding: 4px 7px;
+}
+
+#prix-ai-launch {
+  position: fixed;
+  z-index: 95;
+  bottom: 22px;
+  right: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--borderColor-accent-emphasis, #0969da);
+  border-radius: 24px;
+  color: var(--fgColor-onEmphasis, #fff);
+  background: var(--bgColor-accent-emphasis, #0969da);
+  box-shadow: 0 4px 16px #0002;
+  font:
+    600 13px/1.5 system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+#prix-ai-launch:focus-visible {
+  outline: 3px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 3px;
+}
+#prix-ai-panel {
+  position: fixed;
+  z-index: 96;
+  right: 24px;
+  bottom: 76px;
+  width: 460px;
+  min-width: min(340px, calc(100vw - 24px));
+  max-width: calc(100vw - 32px);
+  height: min(790px, calc(100vh - 105px));
+  min-height: 260px;
+  max-height: calc(100vh - 105px);
+  resize: both;
+  overflow: hidden;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 16px;
+  box-shadow: 0 14px 60px #0004;
+  background: var(--bgColor-default, #fff);
+}
+#prix-ai-panel[hidden] {
+  display: none;
+}
+#prix-ai-panel iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+@media (max-width: 500px) {
+  #prix-ai-launch {
+    right: 12px;
+    bottom: 12px;
+  }
+  #prix-ai-panel {
+    right: 12px;
+    bottom: 65px;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+  }
 }

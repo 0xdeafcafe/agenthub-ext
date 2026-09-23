@@ -55,245 +55,33 @@ try {
     }
   });
 
-  // ── 1. My PRs tab ────────────────────────────────────────────────────────
-  console.log('\n== My PRs tab ==');
-  await page.goto('https://github.com/refined-github/refined-github', {
-    waitUntil: 'domcontentloaded',
-  });
-  await page.waitForSelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-
-  // This is also the extension-loaded check: only our content script adds this id.
-  await page.waitForSelector('#my-prs-repo-tab', {timeout: 15_000});
-
-  const tabInfo = await page.evaluate(() => {
-    const mine = document.getElementById('my-prs-repo-tab');
-    const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-    const liOf = (el) => el?.closest('li');
-    const counters = [...(mine?.querySelectorAll('.Counter') ?? [])];
-    return {
-      href: mine?.getAttribute('href'),
-      label: mine?.textContent?.trim(),
-      rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
-      counterCount: counters.length,
-      counterIsOurs: counters.length === 1 && counters[0].classList.contains('prix-tab-counter'),
-    };
-  });
-  check('tab exists', Boolean(tabInfo.href));
-  check('tab labelled "My PRs"', tabInfo.label === 'My PRs', JSON.stringify(tabInfo.label));
-  check('tab sits right after Pull requests tab', tabInfo.rightAfterPrTab);
-  check(
-    'exactly one counter, our reserved placeholder (no cloned count)',
-    tabInfo.counterCount === 1 && tabInfo.counterIsOurs,
-    `counters=${tabInfo.counterCount}`,
-  );
-  const query = new URLSearchParams(tabInfo.href?.split('?')[1] ?? '');
-  check(
-    'tab href decodes to author:@me query',
-    query.get('q') === 'is:pr is:open author:@me',
-    tabInfo.href,
-  );
-
-  const reviewInfo = await page.evaluate(() => {
-    const review = document.getElementById('review-requested-repo-tab');
-    const mine = document.getElementById('my-prs-repo-tab');
-    const liOf = (el) => el?.closest('li');
-    const counter = review?.querySelector('.prix-tab-counter');
-    return {
-      present: Boolean(review),
-      label: review?.textContent?.trim(),
-      href: review?.getAttribute('href'),
-      afterMine: liOf(mine)?.nextElementSibling === liOf(review),
-      placeholder: Boolean(counter),
-      accent: counter?.classList.contains('prix-tab-counter--accent') ?? null,
-    };
-  });
-  check('Review requested tab exists', reviewInfo.present);
-  check('Review requested tab sits after My PRs', reviewInfo.afterMine);
-  check(
-    'Review requested label',
-    reviewInfo.label === 'Review requested',
-    JSON.stringify(reviewInfo.label),
-  );
-  const reviewQuery = new URLSearchParams(reviewInfo.href?.split('?')[1] ?? '');
-  check(
-    'Review requested href decodes to review-requested:@me',
-    reviewQuery.get('q') === 'is:pr is:open review-requested:@me',
-    reviewInfo.href,
-  );
-  check(
-    'Review requested counter is the default grey, not accent',
-    reviewInfo.placeholder && reviewInfo.accent === false,
-  );
-
-  // Logged out, the author:@me count fetch redirects and must yield NO count -
-  // the reserved placeholder stays in the DOM but empty (no layout shift)
-  await page.waitForTimeout(2500);
-  const counterState = await page.evaluate(() => {
-    const counter = document.querySelector('#my-prs-repo-tab .prix-tab-counter');
-    return {present: Boolean(counter), text: counter?.textContent ?? null};
-  });
-  check(
-    'counter placeholder present even logged out',
-    counterState.present,
-    JSON.stringify(counterState),
-  );
-  check(
-    'no count shown when logged out (graceful)',
-    counterState.present && !/\d/.test(counterState.text ?? ''),
-    JSON.stringify(counterState),
-  );
-
-  // Icon must be the PR tab's current icon, byte for byte
-  const icons = await page.evaluate(() => ({
-    prs:
-      document.querySelector('#pull-requests-tab svg, a#pull-requests-repo-tab svg')?.outerHTML ??
-      null,
-    mine: document.querySelector('#my-prs-repo-tab svg')?.outerHTML ?? null,
-  }));
-  check('tab icon matches the Pull requests icon', icons.prs !== null && icons.prs === icons.mine);
-
-  // Invariant watcher: deleting our tab must trigger re-insertion
-  await page.evaluate(() => {
-    document.getElementById('my-prs-repo-tab')?.closest('li')?.remove();
-  });
-  await page.waitForSelector('#my-prs-repo-tab', {timeout: 10_000});
-  const reinserted = await page.evaluate(() => {
-    const mine = document.getElementById('my-prs-repo-tab');
-    const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-    const liOf = (el) => el?.closest('li');
-    return {
-      back: Boolean(mine),
-      rightAfterPrTab: liOf(prs)?.nextElementSibling === liOf(mine),
-      counterBack: Boolean(mine?.querySelector('.prix-tab-counter')),
-      reviewAfterMine:
-        liOf(mine)?.nextElementSibling ===
-        liOf(document.getElementById('review-requested-repo-tab')),
-    };
-  });
-  check(
-    'tab re-inserts after GitHub drops it',
-    reinserted.back && reinserted.rightAfterPrTab,
-    JSON.stringify(reinserted),
-  );
-  check('re-inserted tab has its counter placeholder', reinserted.counterBack);
-  check('Review requested tab stays after My PRs', reinserted.reviewAfterMine);
-  await shot(page, '01-my-prs-tab.png');
-
-  // Logged-out GitHub 302-redirects author:@me to /pulls/@me, so a real
-  // navigation can never keep the author:@me URL. Exercise the selected-state
-  // path by spoofing the URL on the plain /pulls page and re-running init.
-  const landed = await page.goto(`https://github.com${tabInfo.href}`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await page.waitForTimeout(2000);
-  console.log(`  my-prs href status=${landed?.status()} landed on: ${page.url()}`);
-
+  // ── 1. Pull requests hover menu ─────────────────────────────────────────
+  console.log('\n== Pull requests menu ==');
   await page.goto('https://github.com/refined-github/refined-github/pulls', {
     waitUntil: 'domcontentloaded',
   });
-  await page.waitForSelector('#my-prs-repo-tab', {timeout: 15_000});
-  // Logged out, /pulls/@me lists EVERYONE's PRs - our tab must stay unselected
-  await page.evaluate(() => {
-    history.replaceState(null, '', '/refined-github/refined-github/pulls/@me');
-    document.dispatchEvent(new Event('turbo:render'));
-  });
-  await page.waitForTimeout(500);
-  const atMeLoggedOut = await page.evaluate(
-    () => document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
-  );
-  check(
-    'logged-out /pulls/@me does not select our tab',
-    atMeLoggedOut === null,
-    `aria-current=${atMeLoggedOut}`,
-  );
-  await page.evaluate(() => {
-    history.replaceState(
-      null,
-      '',
-      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me',
-    );
-    document.dispatchEvent(new Event('turbo:render'));
-  });
-  await page.waitForTimeout(500);
-  const selected = await page.evaluate(() => {
-    const read = (el) => ({
-      ariaCurrent: el?.getAttribute('aria-current') ?? null,
-      selectedClass: el?.classList.contains('selected') ?? null,
-    });
-    return {
-      mine: read(document.getElementById('my-prs-repo-tab')),
-      prs: read(document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')),
-    };
-  });
-  check(
-    'My PRs tab selected on its page',
-    selected.mine.ariaCurrent === 'page' || selected.mine.selectedClass,
-    JSON.stringify(selected.mine),
-  );
-  check(
-    'original Pull requests tab deselected',
-    selected.prs.ariaCurrent === null && selected.prs.selectedClass === false,
-    JSON.stringify(selected.prs),
-  );
-
-  // Review requested selected state + mutual exclusion
-  await page.evaluate(() => {
-    history.replaceState(
-      null,
-      '',
-      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+review-requested%3A%40me',
-    );
-    document.dispatchEvent(new Event('turbo:render'));
-  });
-  await page.waitForTimeout(500);
-  const reviewSelected = await page.evaluate(() => ({
-    review:
-      document.getElementById('review-requested-repo-tab')?.getAttribute('aria-current') ?? null,
-    mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
-    prs:
-      document
-        .querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')
-        ?.getAttribute('aria-current') ?? null,
+  const pullsTab = page.locator('a#pull-requests-tab, a#pull-requests-repo-tab').first();
+  await pullsTab.waitFor();
+  // Also the extension-loaded check: only our content script renders this menu.
+  await pullsTab.hover();
+  await page.waitForSelector('.prix-pulls-menu', {timeout: 15_000});
+  const menu = await page.evaluate(() => ({
+    items: [...document.querySelectorAll('.prix-pulls-menu a')].map((a) => a.textContent),
+    current: document.querySelector('.prix-pulls-menu a[aria-current="page"]')?.textContent,
+    nativeTabs: document.querySelectorAll('#my-prs-repo-tab, #review-requested-repo-tab').length,
   }));
+  // Logged out, GitHub has no "me" views either
   check(
-    'Review requested tab selected on its query, others not',
-    reviewSelected.review === 'page' && reviewSelected.mine === null && reviewSelected.prs === null,
-    JSON.stringify(reviewSelected),
+    'logged-out menu lists the repo views only',
+    JSON.stringify(menu.items) === JSON.stringify(['Pull requests', 'Milestones', 'Labels']),
+    JSON.stringify(menu.items),
   );
-
-  // Regression: GitHub re-asserts its tab via attribute flips only - the
-  // attribute observer must put our tab back. Back on the My PRs URL first.
-  await page.evaluate(() => {
-    history.replaceState(
-      null,
-      '',
-      '/refined-github/refined-github/pulls?q=is%3Apr+is%3Aopen+author%3A%40me',
-    );
-    document.dispatchEvent(new Event('turbo:render'));
-  });
-  await page.waitForTimeout(500);
-  await page.evaluate(() => {
-    const mine = document.getElementById('my-prs-repo-tab');
-    const prs = document.querySelector('a#pull-requests-tab, a#pull-requests-repo-tab');
-    mine?.removeAttribute('aria-current');
-    mine?.classList.remove('selected');
-    prs?.setAttribute('aria-current', 'page');
-    prs?.classList.add('selected');
-  });
-  await page.waitForTimeout(600);
-  const reasserted = await page.evaluate(() => ({
-    mine: document.getElementById('my-prs-repo-tab')?.getAttribute('aria-current') ?? null,
-    prs:
-      document
-        .querySelector('a#pull-requests-tab, a#pull-requests-repo-tab')
-        ?.getAttribute('aria-current') ?? null,
-  }));
-  check(
-    'selected state re-applied after GitHub attribute flips',
-    reasserted.mine === 'page' && reasserted.prs === null,
-    JSON.stringify(reasserted),
-  );
-  await shot(page, '02-my-prs-tab-selected.png');
+  check('Pull requests is marked current on /pulls', menu.current === 'Pull requests');
+  check('no extra tabs are inserted into the nav', menu.nativeTabs === 0);
+  await shot(page, '01-pulls-menu.png');
+  await page.mouse.move(0, 600);
+  await page.waitForSelector('.prix-pulls-menu', {state: 'detached', timeout: 5_000});
+  check('menu closes when the pointer leaves', true);
 
   // ── Pick a multi-file PR (react/react PRs almost always touch __tests__) ──
   console.log('\n== Picking a PR ==');

@@ -4,3 +4,4 @@ node_modules/
 e2e/screenshots/
 dist/
 safari-out/
+public/ai/

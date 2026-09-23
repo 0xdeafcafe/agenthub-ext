@@ -67,7 +67,7 @@ try {
     const context = await open(view);
     console.log(`\n${view.toUpperCase()} fixtures`);
     const totals = await page.locator('.prix-totals').textContent();
-    check('counts all files and comma-separated diff stats', totals === '8 files · 4298 lines');
+    check('counts all files and comma-separated diff stats', totals === '8 files · 4,298 lines');
     check('exactly one panel', (await page.locator('#prix-bar').count()) === 1);
     check(
       'default view expands code',
@@ -121,11 +121,50 @@ try {
       'focus keeps other file headers accessible',
       (await page.locator('.prix-chip[data-state="collapsed"]').count()) === 4,
     );
+    await page.evaluate(() => {
+      for (const file of document.querySelectorAll('.fixture-file')) {
+        const wrapper = document.createElement('div');
+        const headerWrapper = document.createElement('div');
+        headerWrapper.append(file.querySelector('.fixture-file-header'));
+        wrapper.append(headerWrapper, ...file.childNodes);
+        file.append(wrapper);
+      }
+    });
+    await settle(page);
+    check(
+      'focus hides non-code diff bodies inside shared header wrappers',
+      await page.locator('.fixture-file').evaluateAll((files) =>
+        files.every((file) => {
+          const code = file.querySelector('.prix-badge').textContent === 'code';
+          return (
+            file.querySelector('.fixture-file-header').getBoundingClientRect().height > 0 &&
+            file.querySelector('.fixture-diff').getBoundingClientRect().height > 0 === code
+          );
+        }),
+      ),
+    );
+    await page.locator(`${idFor(3)} .fixture-file-header`).evaluate((header) => {
+      const replacement = header.cloneNode(true);
+      replacement.classList.remove('prix-header');
+      header.replaceWith(replacement);
+    });
+    await settle(page);
+    check(
+      'replacing a nested header preserves the collapsed diff and visible controls',
+      (await page.locator(`${idFor(3)} .prix-file-controls`).isVisible()) &&
+        !(await page.locator(`${idFor(3)} .fixture-diff`).isVisible()),
+    );
     await page.getByRole('button', {name: 'Expand all categories', exact: true}).click();
     await settle(page);
     check(
       'show all restores every diff',
       (await page.locator('.prix-hidden, .prix-collapsed').count()) === 0,
+    );
+    check(
+      'show all restores every nested diff body',
+      await page
+        .locator('.fixture-diff')
+        .evaluateAll((bodies) => bodies.every((body) => body.getBoundingClientRect().height > 0)),
     );
 
     await page.evaluate(() => window.prixHarness.remount());

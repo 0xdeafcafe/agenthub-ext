@@ -145,6 +145,12 @@ describe('isFileContainer', () => {
     expect(isFileContainer(document.querySelector('div')!)).toBe(true);
   });
 
+  it('rejects classic file boxes that are not PR file rows (seen live)', () => {
+    document.body.innerHTML =
+      '<div class="file js-details-container Details" id="diff-0583794b1c4c1685b0a11f23709964c7"></div>';
+    expect(isFileContainer(document.querySelector('div')!)).toBe(false);
+  });
+
   it('rejects react page chrome that matches the id prefix (seen live)', () => {
     for (const id of ['diff-file-tree-filter', 'diff-comparison-viewer-container']) {
       document.body.innerHTML = `<div id="${id}"></div>`;
