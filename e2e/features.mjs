@@ -59,14 +59,16 @@ try {
   for (const view of ['files', 'changes']) {
     const context = await open(view);
     await page.waitForFunction(() =>
-      document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+      document
+        .querySelector('.prix-coverage')
+        ?.textContent?.startsWith('Counted from the full diff'),
     );
     check(
       `${view}: complete inventory before scrolling`,
-      (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines',
+      (await page.locator('.prix-totals').textContent()) === '8 files · 4,298 lines',
     );
     await page.getByLabel('Exclude comment-only lines', {exact: true}).check();
-    await waitTotal(4283);
+    await waitTotal('4,283');
     check(
       'comment-only lines excluded, inline code retained',
       (await page.locator('.prix-coverage').textContent()).includes(
@@ -241,12 +243,14 @@ try {
   for (const view of ['files', 'changes']) {
     const context = await open(view, 'virtualized');
     await page.waitForFunction(() =>
-      document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+      document
+        .querySelector('.prix-coverage')
+        ?.textContent?.startsWith('Counted from the full diff'),
     );
     check(
       'full inventory counts unmounted files',
       (await page.locator('.prix-badge').count()) === 3 &&
-        (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines',
+        (await page.locator('.prix-totals').textContent()) === '8 files · 4,298 lines',
     );
     await page.locator('.prix-change-map > summary').click();
     await page.getByRole('button', {name: /^Explore folder docs,/}).click();
@@ -258,7 +262,7 @@ try {
     );
     check(
       'inventory does not double-count newly mounted files',
-      (await page.locator('.prix-totals').textContent()) === '8 files · 4298 lines',
+      (await page.locator('.prix-totals').textContent()) === '8 files · 4,298 lines',
     );
     await context.close();
   }
@@ -268,7 +272,7 @@ try {
   );
   check(
     'failed full-inventory fetch is explicitly labeled',
-    !(await page.locator('.prix-coverage').textContent()).includes('Complete PR inventory'),
+    !(await page.locator('.prix-coverage').textContent()).includes('Counted from the full diff'),
   );
   await partial.close();
   check('no feature errors or warnings', errors.length === 0);

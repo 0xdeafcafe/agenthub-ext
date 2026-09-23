@@ -67,7 +67,7 @@ try {
     const context = await open(view);
     console.log(`\n${view.toUpperCase()} fixtures`);
     const totals = await page.locator('.prix-totals').textContent();
-    check('counts all files and comma-separated diff stats', totals === '8 files · 4298 lines');
+    check('counts all files and comma-separated diff stats', totals === '8 files · 4,298 lines');
     check('exactly one panel', (await page.locator('#prix-bar').count()) === 1);
     check(
       'default view expands code',

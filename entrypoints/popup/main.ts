@@ -15,6 +15,11 @@ const status = document.getElementById('settings-status')!;
 const categories = [...DEFAULT_CONFIG.rules.map((rule) => rule.name), 'code'];
 const selects = new Map<string, HTMLSelectElement>();
 let settings: GlobalSettings;
+const STATE_LABELS: Record<DisplayState, string> = {
+  visible: 'Expanded',
+  collapsed: 'Collapsed',
+  hidden: 'Hidden',
+};
 let repository: string | null = null;
 let saving = Promise.resolve();
 
@@ -49,7 +54,7 @@ async function init(): Promise<void> {
       DEFAULT_CONFIG.rules.find((rule) => rule.name === category)?.action ?? 'visible',
     );
     select.append(
-      new Option(`Repository rule (${fallback})`, ''),
+      new Option(`Repository rule: ${STATE_LABELS[fallback]}`, ''),
       new Option('Expanded', 'visible'),
       new Option('Collapsed', 'collapsed'),
       new Option('Hidden', 'hidden'),

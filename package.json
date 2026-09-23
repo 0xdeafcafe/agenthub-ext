@@ -30,7 +30,7 @@
     "prebuild": "node scripts/ai/assets.mjs",
     "prepackage": "node scripts/ai/assets.mjs",
     "predev": "node scripts/ai/assets.mjs",
-    "test:assistant": "node e2e/assistant.mjs",
+    "test:assistant": "node e2e/assistant.mjs && node e2e/triage.mjs",
     "test:ai:real": "node scripts/ai/bench.mjs",
     "test:ai:install": "node scripts/ai/install.mjs"
   },

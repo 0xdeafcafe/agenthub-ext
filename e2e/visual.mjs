@@ -96,7 +96,9 @@ try {
       const page = await context.newPage();
       await page.goto(`${preview.url}/acme/review-kit/pull/42/changes?theme=${theme}`);
       await page.waitForFunction(() =>
-        document.querySelector('.prix-coverage')?.textContent?.startsWith('Complete PR inventory'),
+        document
+          .querySelector('.prix-coverage')
+          ?.textContent?.startsWith('Counted from the full diff'),
       );
       await stableFonts(page);
       if (injectRegression)

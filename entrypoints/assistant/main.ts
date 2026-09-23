@@ -12,6 +12,15 @@ import {
   type TaskMode,
 } from '../../lib/ai/search';
 import type {SourceChunk, SourceIndex} from '../../lib/ai/index';
+import {
+  TriageError,
+  groupTriage,
+  triage,
+  triageItems,
+  triageMarkdown,
+  type TriageResult,
+  type TriageRow,
+} from '../../lib/ai/triage';
 import type {WorkerRequest, WorkerResponse} from '../../lib/ai/protocol';
 
 const get = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -33,6 +42,8 @@ const parentOrigin =
   requestedOrigin === 'https://github.com' || requestedOrigin === location.origin
     ? requestedOrigin
     : '';
+const count = (n: number, noun: string): string =>
+  `${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;
 const post = (data: Record<string, unknown>): void => {
   if (parentOrigin) parent.postMessage({channel, ...data}, parentOrigin);
 };
@@ -46,7 +57,9 @@ let index: SourceIndex | null = null;
 let revision = '';
 let worker: Worker | null = null;
 let job = 0;
-let operation: 'idle' | 'load' | 'generate' | 'remove' = 'idle';
+let operation: 'idle' | 'load' | 'generate' | 'remove' | 'triage' = 'idle';
+let triageConsent = false;
+let triageRequest: AbortController | null = null;
 let active: ModelId | null = null;
 let installed = new Set<ModelId>();
 let partial = new Set<ModelId>();
@@ -99,6 +112,7 @@ const update = (): void => {
   get<HTMLButtonElement>('stop').textContent = stopping ? 'Stopping…' : 'Stop';
   get<HTMLButtonElement>('send').hidden = operation === 'generate';
   get<HTMLButtonElement>('refresh').disabled = busy;
+  get<HTMLButtonElement>('triage').disabled = !index || busy;
   get<HTMLButtonElement>('unload').disabled = !active || busy;
   get<HTMLButtonElement>('install-both').disabled = busy || installed.size === MODELS.length;
   question.disabled = busy;
@@ -244,10 +258,10 @@ function ensureWorker(): Worker {
       answer.sources.replaceChildren(
         makeSources(
           message.sources,
-          `Sources used · ${message.sources.length} excerpts · ${new Set(message.sources.map((source) => source.path)).size} files`,
+          `Sources used · ${count(message.sources.length, 'excerpt')} · ${count(new Set(message.sources.map((source) => source.path)).size, 'file')}`,
         ),
       );
-      answer.status.textContent = `Sample of ${new Set(message.sources.map((source) => source.path)).size} / ${index?.files.length ?? '?'} files · ${message.inputTokens.toLocaleString()} input tokens · ${message.omitted} other candidate excerpts left out`;
+      answer.status.textContent = `Sample of ${new Set(message.sources.map((source) => source.path)).size} / ${index?.files.length ?? '?'} files · ${message.inputTokens.toLocaleString()} input tokens · ${count(message.omitted, 'other candidate excerpt')} left out`;
       say('Reading the selected excerpts…');
     } else if (message.type === 'token' && answer) {
       answer.text += message.text;
@@ -285,7 +299,7 @@ function ensureWorker(): Worker {
           );
         if (refs.valid.length)
           answer.element.append(
-            makeSources(refs.valid, `Cited evidence · ${refs.valid.length} excerpts`),
+            makeSources(refs.valid, `Cited evidence · ${count(refs.valid.length, 'excerpt')}`),
           );
         answer.status.textContent += ` · ${(message.elapsedMs / 1000).toFixed(1)}s · first token ${(message.firstTokenMs / 1000).toFixed(1)}s${message.outputTokens ? ` · ${message.outputTokens} output tokens` : ''}`;
         addAnswerActions(answer);
@@ -473,7 +487,11 @@ function search(): void {
   article.append(node('p', 'message-question', question.value.trim() || 'Changes in this scope'));
   if (results.length)
     article.append(
-      makeSources(results, `${results.length} matching excerpts · local text search`, true),
+      makeSources(
+        results,
+        `${count(results.length, 'matching excerpt')} · local text search`,
+        true,
+      ),
     );
   else
     article.append(
@@ -484,7 +502,142 @@ function search(): void {
   say(`${results.length} matches. No model needed.`);
   scroll();
 }
+function openRow(row: TriageRow, detail: string): HTMLElement {
+  const item = node('li', 'triage-row');
+  const button = node('button', '', row.path);
+  button.type = 'button';
+  button.addEventListener('click', () => post({type: 'open-source', id: row.sourceId}));
+  item.append(button, node('small', '', detail));
+  return item;
+}
+function renderTriage(result: TriageResult): HTMLElement {
+  const {careful, mechanical} = groupTriage(result.rows);
+  const body = node('div', 'triage');
+  const percent = (value: number | null): string =>
+    value === null ? '' : `${Math.round(value * 100)}%`;
+  if (!careful.length)
+    body.append(node('p', 'muted', 'Nothing stands out as a risky behaviour change.'));
+  for (const group of careful) {
+    const section = node('section', 'triage-group');
+    const list = node('ul', '');
+    for (const row of group.rows) list.append(openRow(row, percent(row.risk.confidence)));
+    section.append(
+      node('h3', '', `${group.area[0].toUpperCase()}${group.area.slice(1)} · ${group.rows.length}`),
+      list,
+    );
+    body.append(section);
+  }
+  if (mechanical.length) {
+    const details = node('details', 'triage-mechanical sources');
+    const list = node('ul', '');
+    for (const row of mechanical) list.append(openRow(row, row.change.label));
+    details.append(
+      node('summary', '', `Looks mechanical · ${count(mechanical.length, 'file')}`),
+      list,
+    );
+    body.append(details);
+  }
+  return body;
+}
+function runTriage(): void {
+  if (!index || isBusy()) return;
+  const {items, skipped} = triageItems(index, options().scope);
+  if (!items.length) {
+    say('No code files in this scope. Tests, docs and generated files are already sorted.');
+    return;
+  }
+  get('welcome').hidden = true;
+  if (!triageConsent) {
+    const card = node('article', 'message triage-consent');
+    const actions = node('div', 'answer-actions');
+    const send = node('button', 'primary', `Send ${count(items.length, 'file')}`);
+    send.type = 'button';
+    const cancel = node('button', '', 'Cancel');
+    cancel.type = 'button';
+    send.addEventListener('click', () => {
+      triageConsent = true;
+      card.remove();
+      runTriage();
+    });
+    cancel.addEventListener('click', () => {
+      card.remove();
+      if (!messages.childElementCount) get('welcome').hidden = false;
+      say('Nothing was sent.');
+    });
+    actions.append(send, cancel);
+    card.append(
+      node(
+        'p',
+        '',
+        `Send the diff for ${count(items.length, 'code file')} to classifier.dev? It leaves this browser and is classified on their servers. The free tier is limited per IP address.`,
+      ),
+      actions,
+    );
+    messages.append(card);
+    scroll();
+    return;
+  }
+  const article = node('article', 'message');
+  const header = node('div', 'message-header');
+  header.append(node('strong', '', 'classifier.dev'), node('span', 'remote-badge', 'Off device'));
+  const status = node('p', 'answer-status', `Classifying ${count(items.length, 'code file')}…`);
+  article.append(
+    node('p', 'message-question', `Triage${options().scope ? ` · ${options().scope}` : ''}`),
+    header,
+    status,
+  );
+  messages.append(article);
+  scroll();
+  operation = 'triage';
+  triageRequest = new AbortController();
+  const request = triageRequest;
+  update();
+  say('Sorting code files…');
+  void triage(items, {signal: request.signal})
+    .then((result) => {
+      const full: TriageResult = {...result, skipped};
+      status.textContent = `${count(result.rows.length, 'file')} in ${(result.ms / 1000).toFixed(1)}s · ${result.model}${skipped ? ` · ${count(skipped, 'test, spec or docs file')} sorted by path instead` : ''}. Scores are leads, not proof.`;
+      status.before(renderTriage(full));
+      const actions = node('div', 'answer-actions');
+      const copy = node('button', '', 'Copy triage');
+      copy.type = 'button';
+      copy.addEventListener('click', () => {
+        void navigator.clipboard.writeText(triageMarkdown(full)).then(
+          () => say('Triage copied as Markdown.'),
+          () => say('Could not copy. Select the text and copy it manually.'),
+        );
+      });
+      const retry = node('button', '', 'Retry');
+      retry.type = 'button';
+      retry.dataset.runAnswer = '';
+      retry.addEventListener('click', runTriage);
+      actions.append(copy, retry);
+      article.append(actions);
+      say('Triage ready. Open a file to review it.');
+    })
+    .catch((error: unknown) => {
+      if (request.signal.aborted) {
+        status.textContent = 'Stopped. Nothing more was sent.';
+        return;
+      }
+      status.textContent =
+        error instanceof TriageError
+          ? error.message
+          : 'Couldn’t reach classifier.dev. Check your connection and try again.';
+      status.className = 'answer-warning';
+      say('Triage failed. Search and on-device models still work.');
+    })
+    .finally(() => {
+      if (triageRequest !== request) return;
+      triageRequest = null;
+      operation = 'idle';
+      update();
+    });
+}
 function clear(): void {
+  triageRequest?.abort();
+  triageRequest = null;
+  if (operation === 'triage') operation = 'idle';
   if (operation === 'generate') {
     ensureWorker().postMessage({id: job, type: 'stop'} satisfies WorkerRequest);
     resetWorker();
@@ -575,6 +728,7 @@ get('stop').addEventListener('click', () => {
   }, 5000);
 });
 get('search').addEventListener('click', search);
+get('triage').addEventListener('click', runTriage);
 get('send').addEventListener('click', () => generate());
 get('clear').addEventListener('click', clear);
 get('close').addEventListener('click', () => post({type: 'close'}));
@@ -598,6 +752,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     return;
   const message = event.data;
   if (message.type === 'suspend') {
+    triageRequest?.abort();
     queue = [];
     pending = null;
     if (answer) {
@@ -617,7 +772,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     revision = next.revision;
     scope.value = typeof message.scope === 'string' ? message.scope : '';
     get('coverage').textContent =
-      `${index.files.length} files · ${index.chunks.length} excerpts${index.omittedChunks ? ` · ${index.omittedChunks} excerpts omitted` : ''}${index.truncatedLines ? ' · long lines shortened' : ''}`;
+      `${count(index.files.length, 'file')} · ${count(index.chunks.length, 'excerpt')}${index.omittedChunks ? ` · ${count(index.omittedChunks, 'excerpt')} omitted` : ''}${index.truncatedLines ? ' · long lines shortened' : ''}`;
     if (!simulated) get('pr-title').textContent = message.title;
     document.documentElement.dataset.theme = message.theme;
     const paths = new Set<string>();

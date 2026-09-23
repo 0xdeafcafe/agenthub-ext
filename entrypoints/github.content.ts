@@ -10,7 +10,6 @@ import {
   type CategoryCount,
 } from '../lib/impact-bar';
 import {buildMarkdownReport, fetchImpactMap, type ImpactMap} from '../lib/impact-report';
-import {injectBadge} from '../lib/badges';
 import {FileIndex, adjustedLines} from '../lib/file-index';
 import {browser} from 'wxt/browser';
 import {ReviewPreferences, loadSettings, parseSettings, SETTINGS_KEY} from '../lib/preferences';
@@ -33,7 +32,7 @@ import {
   treeRowContainerId,
   treeRowPath,
 } from '../lib/file-tree';
-import {ensureMyPrsTab, preloadMyPrCounts, watchMyPrsTab} from '../lib/my-prs-tab';
+import {watchPullsMenu} from '../lib/pulls-menu';
 import {
   displayCounts,
   extractHeadSha,
@@ -260,20 +259,7 @@ async function init(signal: AbortSignal): Promise<void> {
   barPlacementWarned = false;
   pathExtractionWarned = false;
 
-  // Start the storage read at document_start so a cached count is in memory
-  // before the nav mounts - the tab's counter placeholder can then be filled
-  // at insert time, before paint.
-  void preloadMyPrCounts();
-
-  // Repo-nav feature runs on every repo page, not just PR files pages.
-  // Idempotent; also re-evaluates the tab's selected state per navigation.
-  // (ensureMyPrsTab is internally try/catch-guarded.)
-  ensureMyPrsTab();
-  // The nav mounts late and gets re-rendered by turbo/React partials, and a
-  // seen-once observer misses losses that don't produce a fresh PR tab node -
-  // enforce the tab invariant on relevant nav mutations for the page's lifetime
-  // (converges to zero DOM writes when the invariant holds).
-  watchMyPrsTab(signal);
+  watchPullsMenu(signal);
 
   const match = PR_PAGE_RE.exec(location.pathname);
   if (!match) {
@@ -338,7 +324,7 @@ async function init(signal: AbortSignal): Promise<void> {
   let directory = '';
   let inventoryPaths: Set<string> | null = null;
   let inventoryOrder: string[] = [];
-  let coverage = 'Loading full PR inventory…';
+  let coverage = 'Counting the full diff…';
   let pendingReveal: string | null = null;
   let revealVersion = 0;
   const index = new FileIndex();
@@ -601,7 +587,7 @@ async function init(signal: AbortSignal): Promise<void> {
   retryInventory.hidden = true;
   retryInventory.addEventListener('click', () => {
     retryInventory.hidden = true;
-    coverage = 'Loading full PR inventory…';
+    coverage = 'Counting the full diff…';
     refreshBar();
     loadInventory(fetchInventory(new URL(location.href), signal));
   });
@@ -635,7 +621,7 @@ async function init(signal: AbortSignal): Promise<void> {
         coverage +
         (preferences.excludeComments
           ? inventoryPaths
-            ? ` · ${commentCount.toLocaleString()} comment-only lines excluded`
+            ? ` · ${commentCount.toLocaleString('en-US')} comment-only lines excluded`
             : ' · comment counts unavailable for unloaded diffs'
           : ''),
       files: [...index.files].map(([path, file]) => ({
@@ -769,7 +755,6 @@ async function init(signal: AbortSignal): Promise<void> {
   preferences.subscribe(applyAll);
 
   const decorateHeader = (header: Element, path: string, category: string): void => {
-    injectBadge(header, category);
     injectFileControls(header, {
       category,
       categories,
@@ -1072,7 +1057,7 @@ async function init(signal: AbortSignal): Promise<void> {
           index.seed(result.inventory.files, categoryOf);
           inventoryPaths = consistent ? paths : null;
           coverage = consistent
-            ? `Complete PR inventory · ${paths.size} files`
+            ? 'Counted from the full diff'
             : 'Diff and page differ · showing discovered files';
           applyAll();
         } else {

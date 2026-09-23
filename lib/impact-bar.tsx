@@ -443,7 +443,7 @@ export class ImpactBar {
       setAttribute(segment, 'data-state', state);
 
       const filesText = `${count.files} ${count.files === 1 ? 'file' : 'files'}`;
-      const linesText = lines > 0 ? ` · ${lines} lines` : '';
+      const linesText = lines > 0 ? ` · ${lines.toLocaleString('en-US')} lines` : '';
       const percent = `${Math.round(share * 100)}%${lineCountsKnown ? '' : ' of files'}`;
       const shareText = total > 0 && count.files > 0 ? ` · ${percent}` : '';
       const reviewedText =
@@ -476,7 +476,7 @@ export class ImpactBar {
 
     setText(
       this.#totals,
-      `${totalFiles} ${totalFiles === 1 ? 'file' : 'files'} · ${lineCountsKnown ? `${totalLines} lines` : 'line counts incomplete'}` +
+      `${totalFiles.toLocaleString('en-US')} ${totalFiles === 1 ? 'file' : 'files'} · ${lineCountsKnown ? `${totalLines.toLocaleString('en-US')} lines` : 'line counts incomplete'}` +
         (totalReviewed > 0 ? ` · ${totalReviewed} reviewed` : ''),
     );
     const reduction =
@@ -486,7 +486,7 @@ export class ImpactBar {
       totalFiles === 0
         ? 'Waiting for files…'
         : filtering
-          ? `${shownFiles} of ${totalFiles} files expanded${reduction > 0 ? ` · ${reduction}% fewer lines` : ''}`
+          ? `${shownFiles.toLocaleString('en-US')} of ${totalFiles.toLocaleString('en-US')} files expanded${reduction > 0 ? ` · ${reduction}% fewer lines` : ''}`
           : 'All files expanded',
     );
     this.#progress.value = totalFiles > 0 ? (totalReviewed / totalFiles) * 100 : 0;
