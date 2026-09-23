@@ -274,6 +274,11 @@ export function isFileContainer(element: Element): boolean {
     return false;
   }
 
+  // Classic `div.file` boxes without `js-file` share the hex id but aren't PR file rows (seen live).
+  if (element.matches('div.file:not(.js-file)')) {
+    return false;
+  }
+
   if (!adapterFor(element)) {
     return false;
   }

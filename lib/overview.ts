@@ -81,9 +81,9 @@ export async function initOverview(
     const signature = JSON.stringify(counts);
     if (signature === totalsSignature) return;
     totalsSignature = signature;
-    totals.textContent = `${counts.files} files · ${counts.added + counts.removed} lines`;
-    added.textContent = `+${counts.added.toLocaleString()}`;
-    removed.textContent = `−${counts.removed.toLocaleString()}`;
+    totals.textContent = `${counts.files.toLocaleString('en-US')} ${counts.files === 1 ? 'file' : 'files'} · ${(counts.added + counts.removed).toLocaleString('en-US')} lines`;
+    added.textContent = `+${counts.added.toLocaleString('en-US')}`;
+    removed.textContent = `−${counts.removed.toLocaleString('en-US')}`;
   };
   const mount = rafThrottled(() => {
     if (!panel.isConnected) {
@@ -148,7 +148,7 @@ export async function initOverview(
       track.append(segment);
       const item = element('span', 'prix-overview-category');
       item.dataset.category = name;
-      item.title = `${count.files} files · ${lines.toLocaleString()} changed lines`;
+      item.title = `${count.files.toLocaleString('en-US')} ${count.files === 1 ? 'file' : 'files'} · ${lines.toLocaleString('en-US')} changed lines`;
       const dot = element('span', 'prix-overview-dot');
       dot.style.background = color;
       const share = element('strong', '', `${percent}%`);
@@ -156,7 +156,7 @@ export async function initOverview(
       legend.append(item);
     }
     track.hidden = false;
-    coverage.textContent = `Complete PR inventory · ${all.files} files${preferences.excludeComments ? ' · comment-only lines excluded' : ''}`;
+    coverage.textContent = `Counted from the full diff${preferences.excludeComments ? ' · comment-only lines excluded' : ''}`;
     map.element.hidden = false;
     map.update(
       [...index.files].map(([path, file]) => ({

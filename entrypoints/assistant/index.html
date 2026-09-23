@@ -51,6 +51,17 @@
           <h2>What needs a closer look?</h2>
           <p>Search the diff, trace a behavior change, or review a small part of the PR.</p>
           <div id="quick-questions"></div>
+          <div class="triage-card">
+            <div>
+              <strong>Triage the code <span class="remote-badge">Off device</span></strong>
+              <p class="muted">
+                Sorts code files by what changed and where a mistake would hurt, using
+                classifier.dev. Sends the code diff in scope; tests, docs and generated files stay
+                here.
+              </p>
+            </div>
+            <button id="triage" type="button" disabled>Triage</button>
+          </div>
           <p class="muted">Start with a folder</p>
           <div id="suggested-scopes"></div>
           <p class="muted">

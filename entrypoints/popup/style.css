@@ -108,6 +108,9 @@ section {
   gap: 16px;
   margin: 9px 0;
 }
+.settings-category select {
+  width: 200px;
+}
 button,
 select {
   font: inherit;
@@ -145,5 +148,5 @@ footer {
 }
 #settings-status {
   margin: 12px 0 0;
-  color: var(--accent);
+  color: var(--soft);
 }

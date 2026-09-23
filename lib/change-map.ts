@@ -215,7 +215,7 @@ export class ChangeMap {
     if (signature === this.#signature) return;
     this.#signature = signature;
     this.#files = files;
-    this.#summary.textContent = `${files.length} files · explore clusters`;
+    this.#summary.textContent = 'where the edits cluster';
     if (this.element.open) this.#render();
   }
 
@@ -265,7 +265,9 @@ export class ChangeMap {
       const {group} = tile;
       const lines = group.files.reduce((sum, file) => sum + file.added + file.removed, 0);
       const hasUnknown = group.files.some((file) => file.linesKnown === false);
-      const lineLabel = hasUnknown ? 'line counts unavailable' : `${lines.toLocaleString()} lines`;
+      const lineLabel = hasUnknown
+        ? 'line counts unavailable'
+        : `${lines.toLocaleString('en-US')} lines`;
       const category = [...group.files].sort((a, b) => b.added + b.removed - a.added - a.removed)[0]
         .category;
       const element = button('', () => activate(group));
@@ -275,7 +277,7 @@ export class ChangeMap {
       element.title = `${group.path}${group.directory ? '/' : ''} · ${group.files.length} files · ${lineLabel}`;
       element.setAttribute(
         'aria-label',
-        `${group.directory ? 'Explore folder' : 'Open file'} ${group.path}, ${hasUnknown ? 'line counts unavailable' : `${lines} changed lines`}`,
+        `${group.directory ? 'Explore folder' : 'Open file'} ${group.path}, ${hasUnknown ? 'line counts unavailable' : `${lines.toLocaleString('en-US')} changed lines`}`,
       );
       const title = document.createElement('strong');
       title.textContent = group.name + (group.directory ? '/' : '');
