@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {YAMLParseError} from 'yaml';
-import {parseConfig} from './config';
+import {DEFAULT_CONFIG, parseConfig, withGitattributesGenerated} from './config';
 
 const EXAMPLE = `
 categories:
@@ -83,5 +83,37 @@ describe('parseConfig', () => {
     expect(() => parseConfig('categories:\n  broken:\n    action: hide\n')).toThrow(
       'no valid categories',
     );
+  });
+});
+
+describe('withGitattributesGenerated', () => {
+  it('appends new globs to the generated category', () => {
+    const merged = withGitattributesGenerated(DEFAULT_CONFIG, ['**/schema.sql']);
+    const rule = merged.rules.find((rule) => rule.name === 'generated');
+    expect(rule?.globs).toContain('**/schema.sql');
+    expect(rule?.globs).toEqual(expect.arrayContaining(DEFAULT_CONFIG.rules[3].globs));
+  });
+
+  it('does not duplicate a glob already present', () => {
+    const merged = withGitattributesGenerated(DEFAULT_CONFIG, ['**/*.pb.go']);
+    expect(merged).toBe(DEFAULT_CONFIG);
+  });
+
+  it('leaves the config untouched when there is no generated category', () => {
+    const config = {
+      rules: [{name: 'server', globs: ['server/**'], action: 'visible' as const}],
+      defaultView: null,
+    };
+    expect(withGitattributesGenerated(config, ['**/schema.sql'])).toBe(config);
+  });
+
+  it('leaves the config untouched when there are no new globs', () => {
+    expect(withGitattributesGenerated(DEFAULT_CONFIG, [])).toBe(DEFAULT_CONFIG);
+  });
+
+  it('does not mutate the original config', () => {
+    const before = JSON.stringify(DEFAULT_CONFIG);
+    withGitattributesGenerated(DEFAULT_CONFIG, ['**/schema.sql']);
+    expect(JSON.stringify(DEFAULT_CONFIG)).toBe(before);
   });
 });

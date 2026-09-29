@@ -1,5 +1,6 @@
 import {parse} from 'yaml';
 import type {CategoryAction, CategoryRule} from './classifier';
+import {fetchGitattributesGlobs} from './gitattributes';
 
 export const DEFAULT_CATEGORIES: CategoryRule[] = [
   {
@@ -109,6 +110,30 @@ export function parseConfig(text: string): PrImpactConfig {
   return {rules, defaultView};
 }
 
+/**
+ * Folds paths GitHub itself treats as generated (`.gitattributes`,
+ * `linguist-generated=true`) into the `generated` category, so repos get
+ * that detection for free without writing `.github/pr-impact.yml`. Leaves
+ * the config untouched if it has no `generated` category - a repo that
+ * renamed or dropped it made that call on purpose.
+ */
+export function withGitattributesGenerated(
+  config: PrImpactConfig,
+  globs: string[],
+): PrImpactConfig {
+  if (globs.length === 0) return config;
+  const index = config.rules.findIndex((rule) => rule.name === 'generated');
+  if (index === -1) return config;
+
+  const rule = config.rules[index];
+  const merged = [...new Set([...rule.globs, ...globs])];
+  if (merged.length === rule.globs.length) return config;
+
+  const rules = [...config.rules];
+  rules[index] = {...rule, globs: merged};
+  return {...config, rules};
+}
+
 // Session-scoped cache, keyed by `owner/repo`; stores the promise so
 // concurrent inits for the same repo share one fetch.
 const cache = new Map<string, Promise<PrImpactConfig>>();
@@ -119,19 +144,26 @@ export function fetchConfig(owner: string, repo: string): Promise<PrImpactConfig
   let cached = cache.get(key);
   if (!cached) {
     cached = (async () => {
-      try {
-        const response = await fetch(`/${owner}/${repo}/raw/HEAD/.github/pr-impact.yml`, {
-          credentials: 'include',
-          signal: AbortSignal.timeout(4000),
-        });
-        if (!response.ok) {
-          return DEFAULT_CONFIG;
-        }
+      const [config, generatedGlobs] = await Promise.all([
+        (async () => {
+          try {
+            const response = await fetch(`/${owner}/${repo}/raw/HEAD/.github/pr-impact.yml`, {
+              credentials: 'include',
+              signal: AbortSignal.timeout(4000),
+            });
+            if (!response.ok) {
+              return DEFAULT_CONFIG;
+            }
 
-        return parseConfig(await response.text());
-      } catch {
-        return DEFAULT_CONFIG;
-      }
+            return parseConfig(await response.text());
+          } catch {
+            return DEFAULT_CONFIG;
+          }
+        })(),
+        fetchGitattributesGlobs(owner, repo),
+      ]);
+
+      return withGitattributesGenerated(config, generatedGlobs);
     })();
     cache.set(key, cached);
   }
