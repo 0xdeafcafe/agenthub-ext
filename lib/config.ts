@@ -138,11 +138,34 @@ export function withGitattributesGenerated(
 // concurrent inits for the same repo share one fetch.
 const cache = new Map<string, Promise<PrImpactConfig>>();
 
+/** Fetches and parses `pr-impact.yml` at one exact ref. Null when absent or unparseable. */
+async function fetchYamlAt(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<PrImpactConfig | null> {
+  try {
+    const response = await fetch(`/${owner}/${repo}/raw/${ref}/.github/pr-impact.yml`, {
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!response.ok) return null;
+
+    return parseConfig(await response.text());
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetches the repo config same-origin (session cookies → works for private
  * repos), from `ref` (the PR's own head commit, so a config or
  * `.gitattributes` change lands the moment its PR opens rather than after it
- * merges). Fails open to defaults.
+ * merges), falling back to the default branch, then to built-in defaults.
+ *
+ * `ref` is scraped from the page best-effort and can lag the true PR head;
+ * falling back to the default branch rather than straight to defaults means
+ * a stale `ref` degrades to "acts like the file wasn't in this PR yet", not
+ * to ignoring a config that's been live on the default branch all along.
  *
  * Public repos serve this via a redirect to raw.githubusercontent.com, whose
  * wildcard CORS header rejects a credentialed request outright - default
@@ -156,18 +179,13 @@ export function fetchConfig(owner: string, repo: string, ref: string): Promise<P
     cached = (async () => {
       const [config, generatedGlobs] = await Promise.all([
         (async () => {
-          try {
-            const response = await fetch(`/${owner}/${repo}/raw/${ref}/.github/pr-impact.yml`, {
-              signal: AbortSignal.timeout(4000),
-            });
-            if (!response.ok) {
-              return DEFAULT_CONFIG;
-            }
-
-            return parseConfig(await response.text());
-          } catch {
-            return DEFAULT_CONFIG;
+          const atRef = await fetchYamlAt(owner, repo, ref);
+          if (atRef) return atRef;
+          if (ref !== 'HEAD') {
+            const atDefault = await fetchYamlAt(owner, repo, 'HEAD');
+            if (atDefault) return atDefault;
           }
+          return DEFAULT_CONFIG;
         })(),
         fetchGitattributesGlobs(owner, repo, ref),
       ]);
