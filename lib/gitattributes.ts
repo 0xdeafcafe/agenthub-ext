@@ -1,3 +1,5 @@
+import {readCachedFile, writeCachedFile} from './repo-file-cache';
+
 /**
  * GitHub already asks repos to flag generated files via `.gitattributes`
  * (`path linguist-generated=true`) so its own diff view can collapse them.
@@ -30,12 +32,14 @@ export function parseGeneratedGlobs(text: string): string[] {
   return [...globs];
 }
 
-// Session-scoped cache, keyed by `owner/repo@ref`; mirrors fetchConfig's cache.
+// In-memory, per-page-load dedup for concurrent calls; repo-file-cache.ts
+// underneath persists the actual fetched text across page loads.
 const cache = new Map<string, Promise<string[]>>();
 
 /**
  * Fetches `.gitattributes` same-origin, from a single exact ref. Fails open
- * to no globs.
+ * to no globs. Checks the persistent cache first - re-fetching this on
+ * every PR visit was the main source of slow detection.
  *
  * Public repos serve this via a 302 to raw.githubusercontent.com, which
  * answers with `Access-Control-Allow-Origin: *` - incompatible with a
@@ -48,13 +52,16 @@ function fetchGlobsAt(owner: string, repo: string, ref: string): Promise<string[
   let cached = cache.get(key);
   if (!cached) {
     cached = (async () => {
+      const stored = await readCachedFile(owner, repo, ref, '.gitattributes');
+      if (stored !== null) return parseGeneratedGlobs(stored);
+
       try {
         const response = await fetch(`/${owner}/${repo}/raw/${ref}/.gitattributes`, {
           signal: AbortSignal.timeout(4000),
         });
-        if (!response.ok) return [];
-
-        return parseGeneratedGlobs(await response.text());
+        const text = response.ok ? await response.text() : '';
+        void writeCachedFile(owner, repo, ref, '.gitattributes', text);
+        return parseGeneratedGlobs(text);
       } catch {
         return [];
       }

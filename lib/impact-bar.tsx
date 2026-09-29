@@ -450,13 +450,16 @@ export class ImpactBar {
         count.reviewed > 0 ? ` · ${count.reviewed} of ${count.files} reviewed` : '';
       const detail = `${name} - ${filesText}${linesText}${shareText}${reviewedText}`;
 
-      // The chip shows name + percentage only; the full breakdown and the
-      // cycle explanation live in the tooltip and aria-label.
+      // The chip shows name, percentage, and the file/line count so the
+      // breakdown is visible without hovering; the full detail (including
+      // review progress) stays in the tooltip and aria-label.
       const NEXT_ACTION: Record<DisplayState, string> = {
         visible: 'collapse',
         collapsed: 'hide',
         hidden: 'show',
       };
+      const stateLabel =
+        state === 'visible' ? 'Expanded' : state === 'collapsed' ? 'Collapsed' : 'Hidden';
       const chip = this.#chips.get(name)!;
       setAttribute(chip, 'data-state', state);
       if (chip.hidden !== (count.files === 0)) chip.hidden = count.files === 0;
@@ -464,13 +467,10 @@ export class ImpactBar {
       setAttribute(
         chip,
         'aria-label',
-        `${name}, ${percent}, ${state} - click to ${NEXT_ACTION[state]}`,
+        `${name}, ${percent}, ${filesText}${linesText}, ${state} - click to ${NEXT_ACTION[state]}`,
       );
       setText(this.#chipMeta.get(name)!, percent);
-      setText(
-        this.#chipState.get(name)!,
-        state === 'visible' ? 'Expanded' : state === 'collapsed' ? 'Collapsed' : 'Hidden',
-      );
+      setText(this.#chipState.get(name)!, `${filesText}${linesText} · ${stateLabel}`);
       setAttribute(segment, 'title', detail);
     }
 

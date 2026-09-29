@@ -75,7 +75,7 @@ describe('ImpactBar markup', () => {
     expect(codeChip.style.getPropertyValue('--prix-cat')).toContain('neutral-emphasis');
   });
 
-  it('chips show name and percentage only, with state in the aria-label', () => {
+  it('chips show name, percentage, and the file/line count without hovering', () => {
     const bar = new ImpactBar(['tests', 'code'], handlers);
     bar.update(
       new Map([
@@ -86,19 +86,32 @@ describe('ImpactBar markup', () => {
     );
     const chip = bar.element.querySelector<HTMLElement>('.prix-chip[data-category="tests"]')!;
     expect(chip.querySelector('.prix-chip-meta')?.textContent).toBe('50%');
-    expect(chip.getAttribute('aria-label')).toBe('tests, 50%, visible - click to collapse');
+    expect(chip.querySelector('.prix-chip-state')?.textContent).toBe(
+      '1 file · 35 lines · Expanded',
+    );
+    expect(chip.getAttribute('aria-label')).toBe(
+      'tests, 50%, 1 file · 35 lines, visible - click to collapse',
+    );
     expect(chip.title).toContain('1 file · 35 lines · 50%');
     expect(chip.title).toContain('click to cycle');
   });
 
-  it('aria-label follows the state', () => {
+  it('aria-label and the visible state line follow the state', () => {
     const bar = new ImpactBar(['tests'], handlers);
     const counts = new Map([['tests', {files: 1, added: 5, removed: 5, reviewed: 0}]]);
     bar.update(counts, () => 'collapsed');
-    const chip = bar.element.querySelector('.prix-chip[data-category="tests"]')!;
-    expect(chip.getAttribute('aria-label')).toBe('tests, 100%, collapsed - click to hide');
+    const chip = bar.element.querySelector<HTMLElement>('.prix-chip[data-category="tests"]')!;
+    expect(chip.getAttribute('aria-label')).toBe(
+      'tests, 100%, 1 file · 10 lines, collapsed - click to hide',
+    );
+    expect(chip.querySelector('.prix-chip-state')?.textContent).toBe(
+      '1 file · 10 lines · Collapsed',
+    );
     bar.update(counts, () => 'hidden');
-    expect(chip.getAttribute('aria-label')).toBe('tests, 100%, hidden - click to show');
+    expect(chip.getAttribute('aria-label')).toBe(
+      'tests, 100%, 1 file · 10 lines, hidden - click to show',
+    );
+    expect(chip.querySelector('.prix-chip-state')?.textContent).toBe('1 file · 10 lines · Hidden');
   });
 });
 

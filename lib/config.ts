@@ -1,6 +1,7 @@
 import {parse} from 'yaml';
 import type {CategoryAction, CategoryRule} from './classifier';
 import {fetchGitattributesGlobs} from './gitattributes';
+import {readCachedFile, writeCachedFile} from './repo-file-cache';
 
 export const DEFAULT_CATEGORIES: CategoryRule[] = [
   {
@@ -138,19 +139,33 @@ export function withGitattributesGenerated(
 // concurrent inits for the same repo share one fetch.
 const cache = new Map<string, Promise<PrImpactConfig>>();
 
-/** Fetches and parses `pr-impact.yml` at one exact ref. Null when absent or unparseable. */
+/**
+ * Fetches and parses `pr-impact.yml` at one exact ref. Null when absent or
+ * unparseable. Checks the persistent cache first - re-fetching this on
+ * every PR visit was the main source of slow detection.
+ */
 async function fetchYamlAt(
   owner: string,
   repo: string,
   ref: string,
 ): Promise<PrImpactConfig | null> {
+  const path = '.github/pr-impact.yml';
+  const stored = await readCachedFile(owner, repo, ref, path);
+  if (stored !== null) {
+    try {
+      return stored ? parseConfig(stored) : null;
+    } catch {
+      return null;
+    }
+  }
+
   try {
-    const response = await fetch(`/${owner}/${repo}/raw/${ref}/.github/pr-impact.yml`, {
+    const response = await fetch(`/${owner}/${repo}/raw/${ref}/${path}`, {
       signal: AbortSignal.timeout(4000),
     });
-    if (!response.ok) return null;
-
-    return parseConfig(await response.text());
+    const text = response.ok ? await response.text() : '';
+    void writeCachedFile(owner, repo, ref, path, text);
+    return text ? parseConfig(text) : null;
   } catch {
     return null;
   }

@@ -160,7 +160,7 @@
   grid-template-columns: 8px auto auto;
   align-items: center;
   gap: 2px 8px;
-  min-width: 122px;
+  min-width: 150px;
   padding: 9px 11px;
   border: 1px solid var(--borderColor-muted, #d1d9e080);
   border-radius: 8px;
