@@ -34,9 +34,8 @@ export function parseGeneratedGlobs(text: string): string[] {
 const cache = new Map<string, Promise<string[]>>();
 
 /**
- * Fetches `.gitattributes` same-origin, from `ref` (the PR's own head commit,
- * so a `.gitattributes` change lands the moment its PR opens rather than
- * after it merges). Fails open to no globs.
+ * Fetches `.gitattributes` same-origin, from a single exact ref. Fails open
+ * to no globs.
  *
  * Public repos serve this via a 302 to raw.githubusercontent.com, which
  * answers with `Access-Control-Allow-Origin: *` - incompatible with a
@@ -44,11 +43,7 @@ const cache = new Map<string, Promise<string[]>>();
  * Default (same-origin) credentials still carry the session cookie on the
  * github.com leg, which is all private repos need.
  */
-export function fetchGitattributesGlobs(
-  owner: string,
-  repo: string,
-  ref: string,
-): Promise<string[]> {
+function fetchGlobsAt(owner: string, repo: string, ref: string): Promise<string[]> {
   const key = `${owner}/${repo}@${ref}`;
   let cached = cache.get(key);
   if (!cached) {
@@ -68,4 +63,24 @@ export function fetchGitattributesGlobs(
   }
 
   return cached;
+}
+
+/**
+ * Fetches `.gitattributes` generated-file globs, unioning `ref` (the PR's
+ * own head commit, so a change lands the moment its PR opens) with the
+ * default branch. `ref` is scraped from the page best-effort and can lag
+ * the true head (e.g. a stale commit reference elsewhere on the page); the
+ * union means that can only ever miss a PR-only addition, never a marker
+ * that already exists on the default branch.
+ */
+export function fetchGitattributesGlobs(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string[]> {
+  if (ref === 'HEAD') return fetchGlobsAt(owner, repo, 'HEAD');
+
+  return Promise.all([fetchGlobsAt(owner, repo, ref), fetchGlobsAt(owner, repo, 'HEAD')]).then(
+    ([atRef, atDefault]) => [...new Set([...atRef, ...atDefault])],
+  );
 }

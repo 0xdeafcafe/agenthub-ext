@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {parseGeneratedGlobs} from './gitattributes';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {fetchGitattributesGlobs, parseGeneratedGlobs} from './gitattributes';
 
 describe('parseGeneratedGlobs', () => {
   it('collects patterns flagged linguist-generated=true', () => {
@@ -39,5 +39,36 @@ describe('parseGeneratedGlobs', () => {
       ['*.pb.go linguist-generated=true', '*.pb.go linguist-generated=true'].join('\n'),
     );
     expect(globs).toEqual(['**/*.pb.go']);
+  });
+});
+
+describe('fetchGitattributesGlobs', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('unions the PR ref with the default branch, so a stale ref only misses PR-only globs', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input) => {
+      const url = input as string;
+      if (url.includes('/raw/abc123/'))
+        return new Response('only-on-ref.go linguist-generated=true');
+      if (url.includes('/raw/HEAD/'))
+        return new Response('only-on-default.go linguist-generated=true');
+      return new Response('', {status: 404});
+    });
+    vi.stubGlobal('fetch', fetch);
+
+    const globs = await fetchGitattributesGlobs('acme', 'widgets', 'abc123');
+    expect(globs.sort()).toEqual(['**/only-on-default.go', '**/only-on-ref.go']);
+  });
+
+  it('fetches only once when the ref already is the default branch', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () => new Response('a.go linguist-generated=true'),
+    );
+    vi.stubGlobal('fetch', fetch);
+
+    await fetchGitattributesGlobs('acme', 'unique-repo-head', 'HEAD');
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
