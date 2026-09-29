@@ -6,6 +6,7 @@ import {categoryColor} from './impact-bar';
 import {fetchInventory} from './inventory';
 import {ReviewPreferences} from './preferences';
 import {fileAnchor, pullHeaderPlacement, readPrTotals, type PrTotals} from './pr-page';
+import {extractHeadSha} from './pr-cache';
 import {rafThrottled} from './safe';
 
 const element = <K extends keyof HTMLElementTagNameMap>(
@@ -28,7 +29,10 @@ export async function initOverview(
 ): Promise<void> {
   const inventoryRequest = fetchInventory(new URL(location.href), signal);
   const preferences = new ReviewPreferences(`${owner}/${repo}`);
-  const configRequest = Promise.all([fetchConfig(owner, repo), preferences.load(signal)]);
+  const configRequest = Promise.all([
+    fetchConfig(owner, repo, extractHeadSha(document) ?? 'HEAD'),
+    preferences.load(signal),
+  ]);
   const panel = element('section', 'prix-bar prix-overview');
   panel.id = 'prix-bar';
   panel.setAttribute('aria-label', 'Pull request change summary');

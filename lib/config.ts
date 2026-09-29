@@ -134,21 +134,30 @@ export function withGitattributesGenerated(
   return {...config, rules};
 }
 
-// Session-scoped cache, keyed by `owner/repo`; stores the promise so
+// Session-scoped cache, keyed by `owner/repo@ref`; stores the promise so
 // concurrent inits for the same repo share one fetch.
 const cache = new Map<string, Promise<PrImpactConfig>>();
 
-/** Fetches the repo config same-origin (session cookies → works for private repos). Fails open to defaults. */
-export function fetchConfig(owner: string, repo: string): Promise<PrImpactConfig> {
-  const key = `${owner}/${repo}`;
+/**
+ * Fetches the repo config same-origin (session cookies → works for private
+ * repos), from `ref` (the PR's own head commit, so a config or
+ * `.gitattributes` change lands the moment its PR opens rather than after it
+ * merges). Fails open to defaults.
+ *
+ * Public repos serve this via a redirect to raw.githubusercontent.com, whose
+ * wildcard CORS header rejects a credentialed request outright - default
+ * (same-origin) credentials avoid that while still carrying the session
+ * cookie on the github.com leg.
+ */
+export function fetchConfig(owner: string, repo: string, ref: string): Promise<PrImpactConfig> {
+  const key = `${owner}/${repo}@${ref}`;
   let cached = cache.get(key);
   if (!cached) {
     cached = (async () => {
       const [config, generatedGlobs] = await Promise.all([
         (async () => {
           try {
-            const response = await fetch(`/${owner}/${repo}/raw/HEAD/.github/pr-impact.yml`, {
-              credentials: 'include',
+            const response = await fetch(`/${owner}/${repo}/raw/${ref}/.github/pr-impact.yml`, {
               signal: AbortSignal.timeout(4000),
             });
             if (!response.ok) {
@@ -160,7 +169,7 @@ export function fetchConfig(owner: string, repo: string): Promise<PrImpactConfig
             return DEFAULT_CONFIG;
           }
         })(),
-        fetchGitattributesGlobs(owner, repo),
+        fetchGitattributesGlobs(owner, repo, ref),
       ]);
 
       return withGitattributesGenerated(config, generatedGlobs);

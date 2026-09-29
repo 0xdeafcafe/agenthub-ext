@@ -278,8 +278,12 @@ async function init(signal: AbortSignal): Promise<void> {
   const repoKey = `${owner}/${repo}`;
   const store = new CategoryStateStore(repoKey);
   const preferences = new ReviewPreferences(repoKey);
+  // Read from the PR's own head commit, not the repo's default branch, so a
+  // config or .gitattributes change lands the moment the PR that makes it is
+  // open - not only after it merges.
+  const pageSha = extractHeadSha(document);
   const [config] = await Promise.all([
-    fetchConfig(owner, repo),
+    fetchConfig(owner, repo, pageSha ?? 'HEAD'),
     store.load(),
     preferences.load(signal),
   ]);
@@ -308,7 +312,6 @@ async function init(signal: AbortSignal): Promise<void> {
   const cacheKey = (): string =>
     `${cacheBase}:${JSON.stringify(Object.entries(preferences.repo.classifications).sort(([a], [b]) => a.localeCompare(b)))}`;
   const seedKey = cacheKey();
-  const pageSha = extractHeadSha(document);
   const pageBaseSha = extractBaseSha(document);
   const cacheEntry = await readPrCounts(seedKey);
   const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha, pageBaseSha) ? cacheEntry : null;
