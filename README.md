@@ -156,6 +156,10 @@ First matching rule wins, and everything else is `code`. Actions are `visible`, 
 
 Optional `defaultView: [code, server]` starts just those categories expanded and hides the rest. Your saved choices override it.
 
+### Generated content
+
+No config needed for repos that already tell GitHub which files are generated. Any path flagged `linguist-generated=true` in `.gitattributes` joins the `generated` category's globs automatically, on top of whatever `.github/pr-impact.yml` sets. Rename or drop the `generated` category in your config and this is skipped - that's your call to make, not ours.
+
 ## Work on it locally
 
 ```sh
