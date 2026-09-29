@@ -30,18 +30,31 @@ export function parseGeneratedGlobs(text: string): string[] {
   return [...globs];
 }
 
-// Session-scoped cache, keyed by `owner/repo`; mirrors fetchConfig's cache.
+// Session-scoped cache, keyed by `owner/repo@ref`; mirrors fetchConfig's cache.
 const cache = new Map<string, Promise<string[]>>();
 
-/** Fetches `.gitattributes` same-origin. Fails open to no globs. */
-export function fetchGitattributesGlobs(owner: string, repo: string): Promise<string[]> {
-  const key = `${owner}/${repo}`;
+/**
+ * Fetches `.gitattributes` same-origin, from `ref` (the PR's own head commit,
+ * so a `.gitattributes` change lands the moment its PR opens rather than
+ * after it merges). Fails open to no globs.
+ *
+ * Public repos serve this via a 302 to raw.githubusercontent.com, which
+ * answers with `Access-Control-Allow-Origin: *` - incompatible with a
+ * credentialed request, so `fetch` throws and we'd silently get nothing.
+ * Default (same-origin) credentials still carry the session cookie on the
+ * github.com leg, which is all private repos need.
+ */
+export function fetchGitattributesGlobs(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<string[]> {
+  const key = `${owner}/${repo}@${ref}`;
   let cached = cache.get(key);
   if (!cached) {
     cached = (async () => {
       try {
-        const response = await fetch(`/${owner}/${repo}/raw/HEAD/.gitattributes`, {
-          credentials: 'include',
+        const response = await fetch(`/${owner}/${repo}/raw/${ref}/.gitattributes`, {
           signal: AbortSignal.timeout(4000),
         });
         if (!response.ok) return [];
