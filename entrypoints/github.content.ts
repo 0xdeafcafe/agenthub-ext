@@ -147,14 +147,15 @@ function insertBar(bar: ImpactBar): void {
       ? {parent: toolbar.parentElement, before: null}
       : null;
   if (!placement) {
-    if (!barPlacementWarned) {
+    // Nothing mounted yet is normal mid-load; the placement observer retries
+    // as soon as a toolbar or file appears. Only a page with files and no
+    // safe spot for the bar is worth a warning.
+    if (!barPlacementWarned && anchor) {
       barPlacementWarned = true;
       console.warn(
         '[PR Impact]',
         'bar placement: nowhere safe to mount the bar on this page - skipping.',
-        anchor
-          ? `anchor chain: ${describeAnchorChain(anchor)}`
-          : 'no anchor found (no toolbar, no file container)',
+        `anchor chain: ${describeAnchorChain(anchor)}`,
       );
     }
 
