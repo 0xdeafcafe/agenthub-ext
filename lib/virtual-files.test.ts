@@ -73,6 +73,14 @@ describe('virtualized file visibility', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('treats flow-layout slots with virtualizer markers as ordinary, hideable files', () => {
+    document.body.innerHTML =
+      '<main><div class="VirtualizedDiffList"><div data-index="0"><div id="diff-aaaaaaaa"></div></div><div data-index="1"><div id="diff-bbbbbbbb"></div></div></div></main>';
+    const container = document.querySelector('#diff-aaaaaaaa')!;
+    expect(isVirtualFile(container)).toBe(false);
+    expect(outerFileWrapper(container)).toBe(container.parentElement);
+  });
+
   it('leaves estimated skeleton and spacer geometry alone with only one mounted file', () => {
     document.body.innerHTML =
       '<main><div style="height:50000px"><div data-index="20" style="position:absolute;height:800px"><div id="diff-aaaaaaaa" aria-label="Loading package.json"></div></div></div></main>';

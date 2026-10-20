@@ -194,6 +194,43 @@ export function adapterFor(container: Element): ViewAdapter | undefined {
   return adapters.find((adapter) => container.matches(adapter.containerSelector));
 }
 
+/** Virtualizer roots: the list itself, never one file's wrapper. */
+const VIRTUAL_LIST_SELECTOR = '[data-virtualizer], [data-virtuoso-scroller]';
+
+/**
+ * An element the layout places by coordinates (absolute/fixed or a
+ * transform), as virtualizers do with their slots. Removing a file from a
+ * slot like this leaves a hole, because the slot keeps its measured height.
+ */
+function isPositionedSlot(element: Element): boolean {
+  const style = getComputedStyle(element);
+  return (
+    style.position === 'absolute' ||
+    style.position === 'fixed' ||
+    (style.transform !== '' && style.transform !== 'none')
+  );
+}
+
+/**
+ * Whether a React-view file sits in a slot a virtualizer positions by
+ * coordinates. GitHub's files list carries virtualizer markers (`data-index`,
+ * "Virtualized" classes) even when its slots are in normal flow, and those
+ * files can be hidden like any other; only coordinate-placed slots can't.
+ */
+export function inPositionedSlot(container: Element): boolean {
+  let element = container.parentElement;
+  for (
+    let hops = 0;
+    element && hops < 6 && element.tagName !== 'MAIN' && element !== document.body;
+    hops++
+  ) {
+    if (isPositionedSlot(element)) return true;
+    if (element.matches(VIRTUAL_LIST_SELECTOR)) return false;
+    element = element.parentElement;
+  }
+  return false;
+}
+
 /**
  * The outermost element that belongs to exactly one PR file. In the React
  * view the `div[id^="diff-"]` container can sit inside a per-file row/slot
@@ -214,14 +251,9 @@ export function outerFileWrapper(container: Element): Element {
     parent && hops < 4 && parent.tagName !== 'MAIN' && parent !== document.body;
     hops++
   ) {
-    // Virtualizer slots and spacers own their height/position even with one mounted file.
-    if (
-      parent.matches(
-        '[data-index], [data-virtual-index], [data-virtualizer], [data-virtuoso-scroller]',
-      ) ||
-      /(?:absolute|translate)/.test(parent.getAttribute('style') ?? '')
-    )
-      break;
+    // Positioned virtualizer slots own their height/position even with one
+    // mounted file; a flow-layout slot shrinks with its file, so it can hide.
+    if (parent.matches(VIRTUAL_LIST_SELECTOR) || isPositionedSlot(parent)) break;
     // A list of file slots is not a per-file wrapper. Check before scanning
     // its descendants so a large PR does not trigger a full scan per file.
     if (parent.childElementCount > 4) {

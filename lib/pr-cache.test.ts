@@ -109,6 +109,17 @@ describe('extractHeadSha', () => {
     expect(extractBaseSha(doc('{"headSha":"abc1234"}'))).toBeNull();
   });
 
+  it('falls back to the classic page comparison fragment URLs', () => {
+    const base = '84a6dcc7e1b66142fc03414f41b90ef36a169809';
+    const head = '76730e99757a863064575b935dfc615518f8bdaf';
+    const page = new DOMParser().parseFromString(
+      `<div data-url="/o/r/pull/1/show_partial_comparison?base_commit_oid=${base}&amp;end_commit_oid=${head}"></div>`,
+      'text/html',
+    );
+    expect(extractHeadSha(page)).toBe(head);
+    expect(extractBaseSha(page)).toBe(base);
+  });
+
   it('returns null when no SHA is embedded', () => {
     expect(extractHeadSha(doc('{"nothing":"here"}'))).toBeNull();
   });

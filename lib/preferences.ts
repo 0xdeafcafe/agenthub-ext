@@ -1,4 +1,5 @@
 import {browser} from 'wxt/browser';
+import {isCommentMode, type CommentMode} from './comment-lines';
 import {isDisplayState, type DisplayState} from './state';
 
 export const SETTINGS_KEY = 'prix:settings';
@@ -19,6 +20,7 @@ export interface ReviewPreset {
 export interface RepoPreferences {
   unreviewed?: boolean;
   excludeComments?: boolean;
+  commentLines?: CommentMode;
   classifications: Record<string, string>;
   presets: ReviewPreset[];
 }
@@ -55,6 +57,7 @@ export function parseRepoPreferences(value: unknown): RepoPreferences {
   return {
     ...(typeof data.unreviewed === 'boolean' ? {unreviewed: data.unreviewed} : {}),
     ...(typeof data.excludeComments === 'boolean' ? {excludeComments: data.excludeComments} : {}),
+    ...(isCommentMode(data.commentLines) ? {commentLines: data.commentLines} : {}),
     classifications: Object.fromEntries(
       Object.entries(object(data.classifications)).filter(
         (entry): entry is [string, string] => typeof entry[1] === 'string',
@@ -124,6 +127,9 @@ export class ReviewPreferences {
   }
   get excludeComments(): boolean {
     return this.repo.excludeComments ?? this.global.excludeComments;
+  }
+  get commentLines(): CommentMode {
+    return this.repo.commentLines ?? 'show';
   }
   subscribe(listener: () => void): void {
     this.#listeners.add(listener);

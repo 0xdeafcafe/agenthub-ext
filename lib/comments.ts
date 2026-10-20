@@ -41,6 +41,7 @@ export class CommentScanner {
   }
 
   scan(line: string): boolean {
+    if (!this.#block && !this.#quote && this.#plainCode(line)) return false;
     if (line.startsWith('#!') && !this.#block && !this.#quote) return false;
     let hasComment = false;
     let hasCode = this.#quote !== null;
@@ -109,5 +110,16 @@ export class CommentScanner {
     if (this.#quote?.length === 1 && this.#quote !== '`' && !line.endsWith('\\'))
       this.#quote = null;
     return hasComment && !hasCode;
+  }
+
+  /**
+   * Most diff lines hold no comment marker and nothing that carries lexer
+   * state to the next line, so the character walk can't change the answer.
+   */
+  #plainCode(line: string): boolean {
+    if (this.#line.some((marker) => line.includes(marker))) return false;
+    if (this.#blocks.some(([start]) => line.includes(start))) return false;
+    if (line.includes('`') || line.endsWith('\\')) return false;
+    return !this.#multiline || (!line.includes('"""') && !line.includes("'''"));
   }
 }

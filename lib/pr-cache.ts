@@ -83,6 +83,24 @@ export function extractHeadSha(doc: Document): string | null {
     }
   }
 
+  return comparisonOid(doc, ['end_commit_oid', 'sha2']);
+}
+
+/**
+ * The classic files page carries no JSON payload with the SHAs, but its
+ * comparison fragments do in their URLs (`show_partial_comparison?
+ * base_commit_oid=…&end_commit_oid=…`, `show_toc?base_sha=…&sha2=…`).
+ */
+function comparisonOid(doc: Document, keys: string[]): string | null {
+  const selector = keys.flatMap((key) => [`[data-url*="${key}="]`, `[src*="${key}="]`]).join(', ');
+  for (const element of doc.querySelectorAll(selector)) {
+    const raw = element.getAttribute('data-url') ?? element.getAttribute('src') ?? '';
+    const params = new URL(raw, 'https://github.com').searchParams;
+    for (const key of keys) {
+      const value = params.get(key);
+      if (value && /^[0-9a-f]{40}$/.test(value)) return value;
+    }
+  }
   return null;
 }
 
@@ -94,7 +112,7 @@ export function extractBaseSha(doc: Document): string | null {
     );
     if (match) return match[1];
   }
-  return null;
+  return comparisonOid(doc, ['base_commit_oid', 'base_sha']);
 }
 
 export async function readPrCounts(key: string): Promise<PrCacheEntry | null> {

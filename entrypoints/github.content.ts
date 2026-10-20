@@ -44,6 +44,7 @@ import {
 } from '../lib/pr-cache';
 import {observeSelector} from '../lib/observer';
 import {observeFiles} from '../lib/file-observer';
+import {CommentLines, isOwnRowMutation} from '../lib/comment-lines';
 import {PR_PAGE_RE, PR_NAV_SELECTOR, pullHeaderPlacement, fileAnchor} from '../lib/pr-page';
 import {VirtualFiles, isVirtualFile, nativeFileToggle, isFileExpanded} from '../lib/virtual-files';
 import {guarded, logError, rafThrottled} from '../lib/safe';
@@ -271,17 +272,19 @@ async function init(signal: AbortSignal): Promise<void> {
     await initOverview(owner, repo, prNumber, signal);
     return;
   }
-  const inventoryRequest = fetchInventory(new URL(location.href), signal);
+  // Read from the PR's own head commit, not the repo's default branch, so a
+  // config or .gitattributes change lands the moment the PR that makes it is
+  // open - not only after it merges.
+  const pageSha = extractHeadSha(document);
+  const pageBaseSha = extractBaseSha(document);
+  const revision = {head: pageSha, base: pageBaseSha};
+  const inventoryRequest = fetchInventory(new URL(location.href), signal, revision);
   const virtualFiles = new VirtualFiles(signal);
   const virtualMode =
     view === 'changes' && new URLSearchParams(location.search).get('mode') === 'virtualization';
   const repoKey = `${owner}/${repo}`;
   const store = new CategoryStateStore(repoKey);
   const preferences = new ReviewPreferences(repoKey);
-  // Read from the PR's own head commit, not the repo's default branch, so a
-  // config or .gitattributes change lands the moment the PR that makes it is
-  // open - not only after it merges.
-  const pageSha = extractHeadSha(document);
   const [config] = await Promise.all([
     fetchConfig(owner, repo, pageSha ?? 'HEAD'),
     store.load(),
@@ -312,7 +315,6 @@ async function init(signal: AbortSignal): Promise<void> {
   const cacheKey = (): string =>
     `${cacheBase}:${JSON.stringify(Object.entries(preferences.repo.classifications).sort(([a], [b]) => a.localeCompare(b)))}`;
   const seedKey = cacheKey();
-  const pageBaseSha = extractBaseSha(document);
   const cacheEntry = await readPrCounts(seedKey);
   const seed = cacheEntry && isCacheFresh(cacheEntry, pageSha, pageBaseSha) ? cacheEntry : null;
   if (signal.aborted) {
@@ -532,6 +534,11 @@ async function init(signal: AbortSignal): Promise<void> {
           .update({excludeComments: value})
           .catch(() => reviewTools.announce('Couldn’t save this preference.'));
       },
+      commentLines: (mode) => {
+        void preferences
+          .update({commentLines: mode})
+          .catch(() => reviewTools.announce('Couldn’t save this preference.'));
+      },
       clearOverrides: () => {
         overrides.clear();
         applyAll();
@@ -592,7 +599,7 @@ async function init(signal: AbortSignal): Promise<void> {
     retryInventory.hidden = true;
     coverage = 'Counting the full diff…';
     refreshBar();
-    loadInventory(fetchInventory(new URL(location.href), signal));
+    loadInventory(fetchInventory(new URL(location.href), signal, revision));
   });
   reviewTools.element.querySelector('.prix-coverage')!.after(retryInventory);
   const refreshBar = rafThrottled(() => {
@@ -617,6 +624,7 @@ async function init(signal: AbortSignal): Promise<void> {
     reviewTools.update({
       unreviewed: preferences.unreviewed,
       excludeComments: preferences.excludeComments,
+      commentLines: preferences.commentLines,
       overrides: overrides.size,
       directory,
       presets: preferences.repo.presets,
@@ -736,6 +744,42 @@ async function init(signal: AbortSignal): Promise<void> {
     {signal},
   );
 
+  // Comment folding works on the rows GitHub has rendered, so it re-runs
+  // whenever a file's rows change (expanded context, a lazily loaded diff).
+  const commentLines = new CommentLines();
+  signal.addEventListener('abort', () => commentLines.clearAll(), {once: true});
+  const applyCommentLines = (container: Element, path: string): void => {
+    commentLines.apply(container, path, preferences.commentLines, () => {
+      applyCommentLines(container, path);
+    });
+  };
+  const pendingRows = new Set<Element>();
+  const flushRows = rafThrottled(() => {
+    for (const container of pendingRows) {
+      const entry = processed.get(container);
+      if (entry && container.isConnected) applyCommentLines(container, entry.path);
+    }
+    pendingRows.clear();
+  }, signal);
+  const rowObserver = new MutationObserver((records) => {
+    if (preferences.commentLines === 'show') return;
+    for (const record of records) {
+      if (isOwnRowMutation(record) || !(record.target instanceof Element)) continue;
+      if (!record.target.closest('table')) {
+        const added = [...record.addedNodes].some(
+          (node) =>
+            node instanceof Element && (node.matches('table, tr') || node.querySelector('tr')),
+        );
+        if (!added) continue;
+      }
+      const container = record.target.closest(containerSelector);
+      if (container) pendingRows.add(container);
+    }
+    if (pendingRows.size) flushRows();
+  });
+  rowObserver.observe(document.documentElement, {subtree: true, childList: true});
+  signal.addEventListener('abort', () => rowObserver.disconnect(), {once: true});
+
   const applyAll = (): void => {
     for (const [path, file] of index.files) {
       const category = categoryOf(path);
@@ -746,6 +790,7 @@ async function init(signal: AbortSignal): Promise<void> {
       if (!entry) continue;
       entry.category = categoryOf(entry.path);
       applyState(container, effectiveState(entry.path, entry.category), virtualFiles);
+      applyCommentLines(container, entry.path);
       const header = adapterFor(container)?.getHeader(container);
       if (header) decorateHeader(header, entry.path, entry.category);
     }
@@ -1005,6 +1050,7 @@ async function init(signal: AbortSignal): Promise<void> {
     }
 
     applyState(container, effectiveState(path, category), virtualFiles);
+    applyCommentLines(container, path);
     if (inventoryPaths && !inventoryPaths.has(path)) {
       inventoryPaths = null;
       coverage = 'Files changed since inventory loaded · showing discovered files';

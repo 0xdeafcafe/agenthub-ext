@@ -1,10 +1,12 @@
 import {browser} from 'wxt/browser';
 import {ChangeMap, type MapFile} from './change-map';
 import type {ReviewPreset} from './preferences';
+import {isCommentMode, type CommentMode} from './comment-lines';
 
 export interface ReviewToolHandlers {
   unreviewed: (value: boolean) => void;
   comments: (value: boolean) => void;
+  commentLines: (mode: CommentMode) => void;
   savePreset: (name: string) => Promise<void>;
   applyPreset: (name: string) => void;
   deletePreset: (name: string) => Promise<void>;
@@ -17,6 +19,7 @@ export class ReviewTools {
   readonly map: ChangeMap;
   #unreviewed = document.createElement('input');
   #comments = document.createElement('input');
+  #commentLines = document.createElement('select');
   #coverage = document.createElement('span');
   #overrides = document.createElement('button');
   #directory = document.createElement('button');
@@ -46,6 +49,20 @@ export class ReviewTools {
     );
     this.#comments.title =
       'Exclude recognized comment-only additions and deletions. Inline code and blank lines still count.';
+    const commentLines = document.createElement('label');
+    this.#commentLines.setAttribute('aria-label', 'Comment lines in the diff');
+    this.#commentLines.title =
+      'Squash keeps the first and last line of any comment block over 5 lines. Inline comments on code lines always show.';
+    this.#commentLines.append(
+      new Option('Show', 'show'),
+      new Option('Squash long blocks', 'fold'),
+      new Option('Hide', 'hide'),
+    );
+    this.#commentLines.addEventListener('change', () => {
+      if (isCommentMode(this.#commentLines.value)) handlers.commentLines(this.#commentLines.value);
+    });
+    commentLines.append('Comments in diff', this.#commentLines);
+    filters.append(commentLines);
     this.#overrides.type = 'button';
     this.#overrides.className = 'prix-filter-reset';
     this.#overrides.addEventListener('click', handlers.clearOverrides);
@@ -135,6 +152,7 @@ export class ReviewTools {
   update(options: {
     unreviewed: boolean;
     excludeComments: boolean;
+    commentLines: CommentMode;
     overrides: number;
     directory: string;
     presets: ReviewPreset[];
@@ -143,6 +161,7 @@ export class ReviewTools {
   }): void {
     this.#unreviewed.checked = options.unreviewed;
     this.#comments.checked = options.excludeComments;
+    this.#commentLines.value = options.commentLines;
     this.#overrides.hidden = options.overrides === 0;
     this.#overrides.textContent = `${options.overrides} file overrides · reset`;
     this.#directory.hidden = !options.directory;

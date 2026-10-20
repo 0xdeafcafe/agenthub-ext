@@ -1,14 +1,15 @@
-import {adapterFor} from './views';
+import {adapterFor, inPositionedSlot} from './views';
 import type {DisplayState} from './state';
 
-export const VIRTUAL_LAYOUT_SELECTOR =
-  '[data-virtualizer], [data-virtuoso-scroller], [data-virtual-index], [data-index], [class*="Virtualized"], [class*="virtualized"]';
-
+/**
+ * A file GitHub virtualizes in a coordinate-placed slot. Hiding it would
+ * leave a hole, so its filter goes through GitHub's own collapse instead.
+ */
 export function isVirtualFile(container: Element): boolean {
   return (
     adapterFor(container)?.name === 'react' &&
     (new URLSearchParams(location.search).get('mode') === 'virtualization' ||
-      container.closest(VIRTUAL_LAYOUT_SELECTOR) !== null)
+      inPositionedSlot(container))
   );
 }
 
