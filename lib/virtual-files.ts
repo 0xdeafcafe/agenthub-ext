@@ -13,11 +13,20 @@ export function isVirtualFile(container: Element): boolean {
   );
 }
 
+/** A button's accessible name, including a tooltip it points at with aria-labelledby. */
+function buttonLabel(button: HTMLButtonElement): string {
+  const labelledBy = (button.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .map((id) => (id ? (document.getElementById(id)?.textContent ?? '') : ''))
+    .join(' ');
+  return `${button.getAttribute('aria-label') ?? ''} ${button.title} ${labelledBy}`;
+}
+
 export function nativeFileToggle(container: Element): HTMLButtonElement | null {
   const header = adapterFor(container)?.getHeader(container);
   for (const button of header?.querySelectorAll<HTMLButtonElement>('button') ?? []) {
     if (button.closest('.prix-file-controls')) continue;
-    const label = `${button.getAttribute('aria-label') ?? ''} ${button.title} ${button.getAttribute('data-testid') ?? ''}`;
+    const label = `${buttonLabel(button)} ${button.getAttribute('data-testid') ?? ''}`;
     if (/(?:expand|collapse|toggle)/i.test(label) && /(?:file|diff)/i.test(label)) return button;
   }
   return null;
@@ -26,7 +35,7 @@ export function nativeFileToggle(container: Element): HTMLButtonElement | null {
 export function isFileExpanded(button: HTMLButtonElement): boolean | null {
   const expanded = button.getAttribute('aria-expanded');
   if (expanded !== null) return expanded === 'true';
-  const label = `${button.getAttribute('aria-label') ?? ''} ${button.title}`;
+  const label = buttonLabel(button);
   return /collapse/i.test(label) ? true : /expand/i.test(label) ? false : null;
 }
 

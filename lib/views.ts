@@ -22,11 +22,6 @@ export interface ViewAdapter {
   getChangedLines: (container: Element) => ChangedLines | null;
 }
 
-/** Prefix-match first, contains-match as fallback (hashed class may not be the first class). */
-function queryByClassPrefix(root: ParentNode, prefix: string): Element | null {
-  return root.querySelector(`[class^="${prefix}"], [class*="${prefix}"]`);
-}
-
 function parseDiffstatText(text: string): ChangedLines | null {
   const added = /([\d,]+)\s+additions?/.exec(text);
   const removed = /([\d,]+)\s+deletions?/.exec(text);
@@ -112,23 +107,59 @@ const classicAdapter: ViewAdapter = {
   },
 };
 
+/** The heading a React-view file is titled by through aria-labelledby. */
+function fileTitle(container: Element): Element | null {
+  for (const id of (container.getAttribute('aria-labelledby') ?? '').split(/\s+/)) {
+    const title = id ? document.getElementById(id) : null;
+    if (title && container.contains(title)) return title;
+  }
+  return null;
+}
+
+/**
+ * The header row around a file's title: the outermost box holding the
+ * title but not the diff table, then unwrapped of single-child wrappers so
+ * the controls land in the row itself.
+ */
+function headerAround(title: Element, container: Element): Element {
+  let header = title;
+  while (
+    header.parentElement &&
+    header.parentElement !== container &&
+    !header.parentElement.querySelector('table')
+  )
+    header = header.parentElement;
+  while (header.childElementCount === 1 && header.firstElementChild!.contains(title)) {
+    if (header.firstElementChild === title) break;
+    header = header.firstElementChild!;
+  }
+  return header;
+}
+
 const reactAdapter: ViewAdapter = {
   name: 'react',
   containerSelector: 'div[id^="diff-"]',
+  // Everything here is found by what GitHub has to keep stable - the file's
+  // anchor id, its accessible title, the table's label and screen-reader
+  // stats - not by hashed class names, which change whenever GitHub
+  // rebuilds (DiffFileHeader-module__diff-file-header became
+  // diff-file-header__CV6GPS). Class fragments are only a last fallback.
   headerSelector:
-    '[class^="DiffFileHeader-module__diff-file-header"], [class*="DiffFileHeader-module__diff-file-header"]',
+    '[data-diff-header-wrapper], table[aria-label^="Diff for: "], [class*="diff-file-header"]',
   getPath(container) {
-    // No data-path attribute in the React view; the path lives in the
-    // header's <h3> and is polluted with invisible bidi marks. Renames
-    // render as "old → new" - the new path is what matters.
-    const nameElement =
-      container.querySelector('h3[class^="DiffFileHeader-module__file-name"] code') ??
-      queryByClassPrefix(container, 'DiffFileHeader-module__file-name');
+    // The path is the file's accessible title, polluted with invisible bidi
+    // marks. Renames render as "old → new" - the new path is what matters.
+    const nameElement = fileTitle(container) ?? container.querySelector('h3[class*="file-name"]');
     const text = nameElement?.textContent?.replaceAll(/[\u200E\u200F]/gu, '').trim();
     if (text) {
       const arrow = text.lastIndexOf('→');
       return (arrow === -1 ? text : text.slice(arrow + 1).trim()) || null;
     }
+
+    // The diff table names its file without relying on any class name.
+    const table = container.querySelector('table[aria-label^="Diff for: "]');
+    const fromTable = table?.getAttribute('aria-label')?.slice('Diff for: '.length).trim();
+    if (fromTable) return fromTable;
 
     // Loading skeletons have no header yet; the path sits in the
     // container's own aria-label as "Loading <path>" (seen live). Accept a
@@ -138,7 +169,12 @@ const reactAdapter: ViewAdapter = {
     return label.startsWith('Loading ') ? path || null : path.includes('/') ? path : null;
   },
   getHeader(container) {
-    return queryByClassPrefix(container, 'DiffFileHeader-module__diff-file-header');
+    const title = fileTitle(container);
+    if (title) return headerAround(title, container);
+    return (
+      container.querySelector('[data-diff-header-wrapper] > *') ??
+      container.querySelector('[class*="diff-file-header"]')
+    );
   },
   getChangedLines(container) {
     // The header carries per-file stats as "+58" / "−22" leaf elements
@@ -153,6 +189,12 @@ const reactAdapter: ViewAdapter = {
       );
       if (fromLabel) {
         return fromLabel;
+      }
+
+      // Screen-reader text: "Lines changed: 77 additions & 0 deletions".
+      const fromText = parseDiffstatText(header.textContent ?? '');
+      if (fromText) {
+        return fromText;
       }
 
       const fromStats = parsePlusMinusStats(header);

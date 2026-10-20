@@ -30,7 +30,9 @@ const FOLD_CLASS = 'prix-comment-fold';
 const CODE_CELL = ':scope > td.blob-code, :scope > td[class*="diff-text-cell"]';
 
 function sideOf(cell: Element, index: number, count: number): Side {
-  const kind = `${cell.className} ${cell.parentElement?.className ?? ''}`;
+  // Classic marks the line kind on the cell; the React view on its inner <code>.
+  const code = cell.querySelector('code')?.className ?? '';
+  const kind = `${cell.className} ${cell.parentElement?.className ?? ''} ${code}`;
   if (/addition/i.test(kind)) return 'new';
   if (/deletion/i.test(kind)) return 'old';
   // Split view: a context row shows the old side on the left, new on the right.
